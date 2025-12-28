@@ -56,7 +56,7 @@ function App() {
       const year = currentDate.getFullYear().toString()
 
       // Chama o backend com filtro de data
-      const response = await axios.get(`http://127.0.0.1:8000/users/1/transactions/?month=${month}&year=${year}`)
+      const response = await axios.get(`https://meu-financeiro-8985.onrender.com/users/1/transactions/?month=${month}&year=${year}`)
       setTransactions(response.data) // Backend já manda ordenado
     } catch (err) {
       console.error(err)
@@ -69,7 +69,7 @@ function App() {
   const handleDelete = async (id) => {
     if (confirm("Tem certeza que deseja apagar essa transação?")) {
       try {
-        await axios.delete(`http://127.0.0.1:8000/users/1/transactions/${id}`)
+        await axios.delete(`https://meu-financeiro-8985.onrender.com/users/1/transactions/${id}`)
         fetchTransactions() 
       } catch (error) {
         alert("Erro ao deletar!")

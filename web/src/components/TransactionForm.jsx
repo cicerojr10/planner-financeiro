@@ -13,7 +13,7 @@ export function TransactionForm({ onSuccess, currentDate }) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    axios.get('http://127.0.0.1:8000/categories')
+    axios.get('https://meu-financeiro-8985.onrender.com/categories')
       .then(response => setCategories(response.data))
       .catch(error => console.error(error))
   }, [])
@@ -46,7 +46,7 @@ export function TransactionForm({ onSuccess, currentDate }) {
 
     setLoading(true)
     try {
-      await axios.post('http://127.0.0.1:8000/users/1/transactions/', {
+      await axios.post('https://meu-financeiro-8985.onrender.com/users/1/transactions/', {
         description,
         amount: amountRaw, // Manda o número puro pro Python
         type,

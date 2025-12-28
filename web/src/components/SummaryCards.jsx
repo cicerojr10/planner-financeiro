@@ -18,7 +18,7 @@ export function SummaryCards({ transactions, currentDate }) { // Recebemos a DAT
     const year = currentDate.getFullYear()
 
     // Chama a inteligência do Python
-    axios.get(`http://127.0.0.1:8000/users/1/stats?month=${month}&year=${year}`)
+    axios.get(`https://meu-financeiro-8985.onrender.com/users/1/stats?month=${month}&year=${year}`)
       .then(res => setStats(res.data))
       .catch(err => console.error(err))
   }, [currentDate, transactions]) // Recarrega se mudar a data ou adicionar transação
