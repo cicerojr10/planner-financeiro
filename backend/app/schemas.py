@@ -40,3 +40,23 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+# --- SCHEMAS DE AUTENTICAÇÃO (NOVO) ---
+
+# O que o usuário manda para criar conta
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+# O que o sistema devolve quando cria o usuário
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    
+    class Config:
+        from_attributes = True
+
+# O Token que devolvemos no Login
+class Token(BaseModel):
+    access_token: str
+    token_type: str

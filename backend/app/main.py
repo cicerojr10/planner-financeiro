@@ -1,10 +1,11 @@
-import sqlite3
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
-from . import schemas  # <--- IMPORTANTE: Importando os esquemas
+import sqlite3
+from . import schemas
+from . import auth
 
 DB_NAME = "financeiro.db"
 
@@ -18,21 +19,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- MODELO DE DADOS LOCAL (Para Updates) ---
-# Mantemos este modelo simples para a rota de atualização
-class Transaction(BaseModel):
-    description: str
-    amount: float
-    type: str
-    category_id: Optional[int] = None
-
 # --- CONEXÃO ---
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- CRIAÇÃO DAS TABELAS E DADOS PADRÃO ---
+# --- CRIAÇÃO DAS TABELAS ---
 def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -60,11 +53,19 @@ def create_tables():
         )
     ''')
 
-    # 3. Popula categorias padrão se estiver vazio
+    # 3. Tabela de Usuários (NOVA PARA LOGIN)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE,
+            hashed_password TEXT
+        )
+    ''')
+
+    # Popula categorias padrão se estiver vazio
     cursor.execute('SELECT count(*) FROM categories')
     if cursor.fetchone()[0] == 0:
         default_cats = [
-            # Despesas
             ('Alimentação', 'fast-food', 'expense'),
             ('Transporte', 'car-sport', 'expense'),
             ('Casa', 'home', 'expense'),
@@ -72,7 +73,6 @@ def create_tables():
             ('Saúde', 'medkit', 'expense'),
             ('Mercado', 'cart', 'expense'),
             ('Educação', 'school', 'expense'),
-            # Receitas
             ('Salário', 'cash-outline', 'income'),
             ('Pix', 'swap-horizontal', 'income'),
             ('Investimento', 'trending-up', 'income'),
@@ -80,7 +80,7 @@ def create_tables():
         ]
         cursor.executemany('INSERT INTO categories (name, icon, type) VALUES (?, ?, ?)', default_cats)
         conn.commit()
-        print("--- Categorias Padrão Criadas com Sucesso ---")
+        print("--- Categorias Padrão Criadas ---")
 
     conn.commit()
     conn.close()
@@ -89,9 +89,58 @@ def create_tables():
 def startup():
     create_tables()
 
-# --- ROTAS ---
+# ==========================================
+# ROTA 1: CADASTRO DE USUÁRIO (SIGNUP)
+# ==========================================
+@app.post("/signup", response_model=schemas.UserResponse)
+def create_user(user: schemas.UserCreate):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Verifica se email já existe
+    cursor.execute("SELECT * FROM users WHERE email = ?", (user.email,))
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+    
+    # Cria o Hash da senha e salva
+    hashed_password = auth.get_password_hash(user.password)
+    cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (user.email, hashed_password))
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return {"id": user_id, "email": user.email}
 
-# Listar Categorias
+# ==========================================
+# ROTA 2: LOGIN (GERAR TOKEN)
+# ==========================================
+@app.post("/token", response_model=schemas.Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Busca usuário
+    cursor.execute("SELECT * FROM users WHERE email = ?", (form_data.username,))
+    user_row = cursor.fetchone()
+    conn.close()
+    
+    # Verifica senha
+    if not user_row or not auth.verify_password(form_data.password, user_row['hashed_password']):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou senha incorretos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Gera Token
+    access_token = auth.create_access_token(data={"sub": user_row['email']})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# ==========================================
+# ROTAS ANTIGAS (TRANSAÇÕES E CATEGORIAS)
+# ==========================================
+
 @app.get("/categories")
 def get_categories():
     conn = get_db_connection()
@@ -101,13 +150,11 @@ def get_categories():
     conn.close()
     return items
 
-# --- LISTAR TRANSAÇÕES (COM FILTRO DE MÊS/ANO) ---
 @app.get("/users/{user_id}/transactions/")
 def read_transactions(user_id: int, month: Optional[str] = None, year: Optional[str] = None):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Começamos a query básica
     query = '''
         SELECT t.*, c.name as category_name, c.icon as category_icon 
         FROM transactions t
@@ -116,14 +163,11 @@ def read_transactions(user_id: int, month: Optional[str] = None, year: Optional[
     '''
     params = [user_id]
     
-    # Se o celular mandou mês e ano, adicionamos o filtro
     if month and year:
-        # SQLite: strftime('%m', date) pega o mês '01', '02'...
         query += ' AND strftime("%m", t.date) = ? AND strftime("%Y", t.date) = ?'
         params.append(month)
         params.append(year)
     
-    # Ordena por data (mais recente primeiro)
     query += ' ORDER BY t.date DESC'
 
     cursor.execute(query, params)
@@ -131,14 +175,11 @@ def read_transactions(user_id: int, month: Optional[str] = None, year: Optional[
     conn.close()
     return items
 
-# --- CRIAR TRANSAÇÃO (CORRIGIDO DATA) ---
-# Usa schemas.TransactionCreate para aceitar a data opcional
 @app.post("/users/{user_id}/transactions/", response_model=schemas.Transaction)
 def create_transaction(user_id: int, transaction: schemas.TransactionCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # LÓGICA DE DATA: Se veio data no JSON, usa ela. Se não, usa Agora.
     if transaction.date:
         final_date = transaction.date
     else:
@@ -153,8 +194,6 @@ def create_transaction(user_id: int, transaction: schemas.TransactionCreate):
     conn.commit()
     conn.close()
     
-    # --- A CORREÇÃO ESTÁ AQUI EMBAIXO 👇 ---
-    # Adicionamos "user_id": user_id no retorno
     return {
         **transaction.dict(), 
         "id": transaction_id, 
@@ -162,36 +201,21 @@ def create_transaction(user_id: int, transaction: schemas.TransactionCreate):
         "user_id": user_id 
     }
 
-# Deletar Transação
 @app.delete("/users/{user_id}/transactions/{transaction_id}")
 def delete_transaction(user_id: int, transaction_id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    if cursor.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Transação não encontrada")
-        
     cursor.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
     conn.commit()
     conn.close()
-    
     return {"message": "Transação deletada"}
 
-# --- ATUALIZAR TRANSAÇÃO (PUT) ---
+# Atualizado para usar schemas.TransactionBase em vez da classe local antiga
 @app.put("/users/{user_id}/transactions/{transaction_id}")
-def update_transaction(user_id: int, transaction_id: int, transaction: Transaction):
+def update_transaction(user_id: int, transaction_id: int, transaction: schemas.TransactionBase):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Verifica se a transação existe
-    cursor.execute('SELECT * FROM transactions WHERE id = ?', (transaction_id,))
-    if cursor.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Transação não encontrada")
-        
-    # 2. Atualiza os dados (SQL UPDATE)
     cursor.execute('''
         UPDATE transactions 
         SET description = ?, amount = ?, type = ?, category_id = ?
@@ -200,16 +224,13 @@ def update_transaction(user_id: int, transaction_id: int, transaction: Transacti
     
     conn.commit()
     conn.close()
-    
     return {"message": "Transação atualizada com sucesso"}
 
-# --- ESTATÍSTICAS E COMPARAÇÃO ---
 @app.get("/users/{user_id}/stats")
 def get_stats(user_id: int, month: int, year: int):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Calcular qual é o mês passado
     if month == 1:
         prev_month = 12
         prev_year = year - 1
@@ -217,7 +238,6 @@ def get_stats(user_id: int, month: int, year: int):
         prev_month = month - 1
         prev_year = year
 
-    # Função auxiliar para somar despesas de um mês específico
     def get_expense_sum(m, y):
         cursor.execute('''
             SELECT SUM(amount) FROM transactions 
@@ -227,19 +247,17 @@ def get_stats(user_id: int, month: int, year: int):
         result = cursor.fetchone()[0]
         return result if result else 0.0
 
-    # 2. Busca os totais
     current_expense = get_expense_sum(month, year)
     previous_expense = get_expense_sum(prev_month, prev_year)
 
     conn.close()
 
-    # 3. Analisa o resultado
     diff = current_expense - previous_expense
     
-    if diff > 0.01: # Gastou mais (margem de erro de centavos)
+    if diff > 0.01:
         message = f"R$ {diff:.2f} a mais que mês passado ⚠️"
         status = "warning"
-    elif diff < -0.01: # Gastou menos
+    elif diff < -0.01:
         message = f"Economia de R$ {abs(diff):.2f} 🎉"
         status = "good"
     else:

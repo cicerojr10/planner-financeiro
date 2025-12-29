@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from '../services/api' // Importa nosso serviço configurado
 import { PlusCircle, Loader2 } from 'lucide-react'
 
 export function TransactionForm({ onSuccess, currentDate }) {
@@ -13,9 +13,9 @@ export function TransactionForm({ onSuccess, currentDate }) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    axios.get('https://meu-financeiro-8985.onrender.com/categories')
+    api.get('/categories')
       .then(response => setCategories(response.data))
-      .catch(error => console.error(error))
+      .catch(error => console.error("Erro ao buscar categorias:", error))
   }, [])
 
   // --- MÁGICA DA MÁSCARA DE MOEDA ---
@@ -46,20 +46,26 @@ export function TransactionForm({ onSuccess, currentDate }) {
 
     setLoading(true)
     try {
-      await axios.post('https://meu-financeiro-8985.onrender.com/users/1/transactions/', {
+      // O 'api' já sabe que a base é https://...onrender.com
+      await api.post('/users/1/transactions/', {
         description,
         amount: amountRaw, // Manda o número puro pro Python
         type,
         category_id: categoryId,
         date: currentDate.toISOString()
       })
+      
+      // Limpa o formulário
       setDescription('')
       setAmountDisplay('')
       setAmountRaw(0)
       setCategoryId(null)
+      
+      // Avisa o pai que salvou com sucesso
       onSuccess()
     } catch (error) {
-      alert("Erro ao salvar")
+      console.error(error);
+      alert("Erro ao salvar a transação")
     } finally {
       setLoading(false)
     }
