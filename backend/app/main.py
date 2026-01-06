@@ -135,7 +135,12 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     
     # Gera Token
     access_token = auth.create_access_token(data={"sub": user_row['email']})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "id": user_row['id'],
+        "email": user_row['email']
+    }
 
 # ==========================================
 # ROTAS ANTIGAS (TRANSAÇÕES E CATEGORIAS)

@@ -35,7 +35,7 @@ const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const API_URL = 'https://meu-financeiro-8985.onrender.com';
 
 export default function HomeScreen() {
-  const { logout } = useContext(AuthContext) as any;
+  const { user, logout } = useContext(AuthContext) as any;
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,43 +102,41 @@ export default function HomeScreen() {
 
   const fetchData = async () => {
     setLoading(true);
-    console.log("--- INICIANDO FETCH DATA ---");
-    console.log("URL Alvo:", API_URL);
-
     try {
       const month = (currentDate.getMonth() + 1).toString().padStart(2, '0');
       const year = currentDate.getFullYear().toString();
       
-      // 1. Tenta buscar transações
-      const urlTrans = `${API_URL}/users/1/transactions/?month=${month}&year=${year}`;
-      console.log("Buscando transações em:", urlTrans);
-      
-      const transResponse = await axios.get(urlTrans, { timeout: 60000 }); // Timeout de 10s
-      console.log("Transações recebidas:", transResponse.data.length);
-      setTransactions(transResponse.data);
+      // 1. Buscamos Categorias e Transações em paralelo (mais rápido)
+      const [catResponse, transResponse] = await Promise.all([
+        axios.get(`${API_URL}/categories`),
+        axios.get(`${API_URL}/users/${user?.id}/transactions/?month=${month}&year=${year}`)
+      ]);
 
-      // 2. Tenta buscar categorias
-      console.log("Buscando categorias...");
-      const catResponse = await axios.get(`${API_URL}/categories`, { timeout: 60000 });
-      console.log("Categorias recebidas:", catResponse.data.length);
-      setCategories(catResponse.data);
+      const categoriesData = catResponse.data;
+      const transactionsData = transResponse.data;
+
+      // 2. A MÁGICA: Cruzamos os dados aqui no celular 📱
+      // Se a transação tem "category_id: 2", buscamos qual é o nome e ícone da categoria 2
+      const enrichedTransactions = transactionsData.map((t: any) => {
+        const relatedCategory = categoriesData.find((c: any) => c.id === t.category_id);
+        
+        return {
+          ...t,
+          // Se o backend não mandou nome, usamos o da lista de categorias
+          category_name: t.category_name || (relatedCategory ? relatedCategory.name : 'Outros'),
+          category_icon: t.category_icon || (relatedCategory ? relatedCategory.icon : 'help-circle-outline'),
+          // Garante que amount seja número
+          amount: Number(t.amount)
+        };
+      });
+
+      setCategories(categoriesData);
+      setTransactions(enrichedTransactions);
 
     } catch (error: any) { 
-      console.error("ERRO DETALHADO:", error);
-      
-      if (error.response) {
-        // O servidor respondeu com erro (ex: 404, 500)
-        Alert.alert("Erro no Servidor", `Status: ${error.response.status}\nMsg: ${JSON.stringify(error.response.data)}`);
-      } else if (error.request) {
-        // O pedido foi feito mas não houve resposta (Timeout ou Sem Internet)
-        Alert.alert("Sem Resposta", "O servidor demorou demais ou você está sem internet. Verifique se o link https abre no navegador do celular.");
-      } else {
-        // Erro na configuração
-        Alert.alert("Erro", error.message);
-      }
-    } 
-    finally { 
-      console.log("--- FIM DO LOADING ---");
+      console.error("Erro ao buscar dados:", error);
+      Alert.alert("Erro", "Não foi possível carregar os dados.");
+    } finally { 
       setLoading(false); 
     }
   };
@@ -164,15 +162,15 @@ export default function HomeScreen() {
       category_id: selectedCategory,
       date: currentDate.toISOString() };
     try {
-      if (editingId) await axios.put(`${API_URL}/users/1/transactions/${editingId}`, payload);
-      else await axios.post(`${API_URL}/users/1/transactions/`, payload);
+      if (editingId) await axios.put(`${API_URL}/users/${user?.id}/transactions/${editingId}`, payload);
+      else await axios.post(`${API_URL}/users/${user?.id}/transactions/`, payload);
       setModalVisible(false); fetchData();
     } catch (error) { Alert.alert("Erro", "Falha ao salvar."); } 
     finally { setSaving(false); }
   };
 
   const handleDelete = (id: number) => {
-    Alert.alert("Excluir", "Apagar?", [{ text: "Não" }, { text: "Sim", onPress: async () => { await axios.delete(`${API_URL}/users/1/transactions/${id}`); fetchData(); }}]);
+    Alert.alert("Excluir", "Apagar?", [{ text: "Não" }, { text: "Sim", onPress: async () => { await axios.delete(`${API_URL}/users/${user?.id}/transactions/${id}`); fetchData(); }}]);
   };
 
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
