@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { 
   StyleSheet, Text, View, FlatList, ActivityIndicator, 
   Platform, StatusBar, SafeAreaView, TouchableOpacity, 
@@ -6,7 +6,6 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import { useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 
 // --- TIPOS ---
@@ -28,16 +27,28 @@ interface Transaction {
   category_id?: number;
 }
 
-// Cores para os gráficos
+// --- CONFIGURAÇÕES ---
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
 
-// const API_URL = 'http://192.168.1.16:8000';
-const API_URL = 'https://meu-financeiro-8985.onrender.com';
+// ⚠️ LISTA DE SEGURANÇA (Para garantir que sempre tenha categorias)
+const DEFAULT_CATEGORIES = [
+  { id: 1, name: 'Alimentação', icon: 'fast-food', type: 'expense' },
+  { id: 2, name: 'Transporte', icon: 'bus', type: 'expense' },
+  { id: 3, name: 'Salário', icon: 'cash', type: 'income' },
+  { id: 4, name: 'Lazer', icon: 'game-controller', type: 'expense' },
+  { id: 5, name: 'Casa', icon: 'home', type: 'expense' },
+  { id: 6, name: 'Investimento', icon: 'trending-up', type: 'income' },
+  { id: 7, name: 'Saúde', icon: 'medkit', type: 'expense' },
+  { id: 8, name: 'Educação', icon: 'school', type: 'expense' },
+];
 
 export default function HomeScreen() {
-  const { user, logout } = useContext(AuthContext) as any;
+  const { user, logout, API_URL } = useContext(AuthContext) as any;
+  
+  // INICIALIZA JÁ COM AS CATEGORIAS PADRÃO (Para não ficar vazio)
+  const [categories, setCategories] = useState<any[]>(DEFAULT_CATEGORIES);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  
   const [loading, setLoading] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -54,19 +65,17 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // --- CÁLCULO DOS DADOS DO GRÁFICO (NOVO) ---
+  // --- CÁLCULO DOS DADOS DO GRÁFICO ---
   const getChartData = () => {
     const expenses = transactions.filter(t => t.type === 'expense');
     const totalExpense = expenses.reduce((acc, t) => acc + t.amount, 0);
 
-    // Agrupa por categoria
     const grouped: Record<string, number> = {};
     expenses.forEach(t => {
       const catName = t.category_name || 'Outros';
       grouped[catName] = (grouped[catName] || 0) + t.amount;
     });
 
-    // Transforma em lista ordenada
     return Object.keys(grouped)
       .map((key, index) => ({
         name: key,
@@ -74,12 +83,12 @@ export default function HomeScreen() {
         percent: totalExpense > 0 ? (grouped[key] / totalExpense) * 100 : 0,
         color: COLORS[index % COLORS.length]
       }))
-      .sort((a, b) => b.value - a.value); // Do maior para o menor
+      .sort((a, b) => b.value - a.value);
   };
 
   const chartData = getChartData();
 
-  // --- FUNÇÕES GERAIS ---
+  // --- FUNÇÕES AUXILIARES ---
   const getMonthName = (date: Date) => date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   
   const changeMonth = (direction: 'prev' | 'next') => {
@@ -100,83 +109,129 @@ export default function HomeScreen() {
     setNewAmountDisplay(numberValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
   };
 
+  // --- BUSCA DE DADOS (TURBINADA) ---
   const fetchData = async () => {
     setLoading(true);
     try {
       const month = (currentDate.getMonth() + 1).toString().padStart(2, '0');
       const year = currentDate.getFullYear().toString();
       
-      // 1. Buscamos Categorias e Transações em paralelo (mais rápido)
-      const [catResponse, transResponse] = await Promise.all([
-        axios.get(`${API_URL}/categories`),
-        axios.get(`${API_URL}/users/${user?.id}/transactions/?month=${month}&year=${year}`)
-      ]);
+      // 1. Tenta buscar categorias da nuvem
+      let activeCategories = DEFAULT_CATEGORIES;
+      try {
+        const catRes = await axios.get(`${API_URL}/categories`);
+        if (catRes.data && catRes.data.length > 0) {
+          activeCategories = catRes.data;
+          setCategories(activeCategories);
+        }
+      } catch (err) {
+        console.log("Usando categorias locais (offline ou banco vazio).");
+      }
 
-      const categoriesData = catResponse.data;
-      const transactionsData = transResponse.data;
+      // 2. Busca Transações (usando ID do usuário logado)
+      if (user?.id) {
+        const transResponse = await axios.get(`${API_URL}/users/${user.id}/transactions/?month=${month}&year=${year}`);
+        const transactionsData = transResponse.data;
 
-      // 2. A MÁGICA: Cruzamos os dados aqui no celular 📱
-      // Se a transação tem "category_id: 2", buscamos qual é o nome e ícone da categoria 2
-      const enrichedTransactions = transactionsData.map((t: any) => {
-        const relatedCategory = categoriesData.find((c: any) => c.id === t.category_id);
-        
-        return {
-          ...t,
-          // Se o backend não mandou nome, usamos o da lista de categorias
-          category_name: t.category_name || (relatedCategory ? relatedCategory.name : 'Outros'),
-          category_icon: t.category_icon || (relatedCategory ? relatedCategory.icon : 'help-circle-outline'),
-          // Garante que amount seja número
-          amount: Number(t.amount)
-        };
-      });
-
-      setCategories(categoriesData);
-      setTransactions(enrichedTransactions);
+        // 3. Cruzamento de Dados (Preenche ícones e nomes)
+        const enrichedTransactions = transactionsData.map((t: any) => {
+          const relatedCategory = activeCategories.find((c: any) => c.id === t.category_id || c.name === t.category_name);
+          return {
+            ...t,
+            category_name: t.category_name || (relatedCategory ? relatedCategory.name : 'Outros'),
+            category_icon: t.category_icon || (relatedCategory ? relatedCategory.icon : 'help-circle-outline'),
+            amount: Number(t.amount)
+          };
+        });
+        setTransactions(enrichedTransactions);
+      }
 
     } catch (error: any) { 
-      console.error("Erro ao buscar dados:", error);
-      Alert.alert("Erro", "Não foi possível carregar os dados.");
+      console.error("Erro geral:", error);
     } finally { 
       setLoading(false); 
     }
   };
 
+  // Recarrega quando mudar o mês ou o usuário logar
+  useEffect(() => {
+    fetchData();
+  }, [currentDate, user]);
+
+  // --- AÇÕES DO MODAL ---
   const handleOpenCreate = () => {
-    setEditingId(null); setNewDescription(''); setNewAmountRaw(0); setNewAmountDisplay(''); setSelectedCategory(null); setNewType('expense'); setModalVisible(true);
+    setEditingId(null); 
+    setNewDescription(''); 
+    setNewAmountRaw(0); 
+    setNewAmountDisplay(''); 
+    setSelectedCategory(null); 
+    setNewType('expense'); 
+    setModalVisible(true);
   };
 
   const handleOpenEdit = (item: Transaction) => {
-    setEditingId(item.id); setNewDescription(item.description);
+    setEditingId(item.id); 
+    setNewDescription(item.description);
     setNewAmountRaw(item.amount);
     setNewAmountDisplay(item.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-    setNewType(item.type); setSelectedCategory(item.category_id || null); setModalVisible(true);
+    setNewType(item.type); 
+    setSelectedCategory(item.category_id || null); 
+    setModalVisible(true);
   };
 
   const handleSave = async () => {
-    if (!newDescription || newAmountRaw <= 0 || !selectedCategory) { Alert.alert("Ops!", "Preencha tudo."); return; }
+    if (!newDescription || newAmountRaw <= 0 || !selectedCategory) { 
+      Alert.alert("Ops!", "Preencha a descrição, valor e escolha uma categoria."); 
+      return; 
+    }
+    
     setSaving(true);
+    
     const payload = {
       description: newDescription,
       amount: newAmountRaw,
       type: newType,
       category_id: selectedCategory,
-      date: currentDate.toISOString() };
+      date: currentDate.toISOString() 
+    };
+
     try {
-      if (editingId) await axios.put(`${API_URL}/users/${user?.id}/transactions/${editingId}`, payload);
-      else await axios.post(`${API_URL}/users/${user?.id}/transactions/`, payload);
-      setModalVisible(false); fetchData();
-    } catch (error) { Alert.alert("Erro", "Falha ao salvar."); } 
-    finally { setSaving(false); }
+      if (editingId) {
+        await axios.put(`${API_URL}/users/${user?.id}/transactions/${editingId}`, payload);
+      } else {
+        await axios.post(`${API_URL}/users/${user?.id}/transactions/`, payload);
+      }
+      setModalVisible(false); 
+      fetchData();
+    } catch (error) { 
+      console.log(error);
+      Alert.alert("Erro", "Falha ao salvar. Verifique sua conexão."); 
+    } finally { 
+      setSaving(false); 
+    }
   };
 
   const handleDelete = (id: number) => {
-    Alert.alert("Excluir", "Apagar?", [{ text: "Não" }, { text: "Sim", onPress: async () => { await axios.delete(`${API_URL}/users/${user?.id}/transactions/${id}`); fetchData(); }}]);
+    Alert.alert("Excluir", "Apagar essa movimentação?", [
+      { text: "Não" }, 
+      { text: "Sim", onPress: async () => { 
+          try {
+            await axios.delete(`${API_URL}/users/${user?.id}/transactions/${id}`); 
+            fetchData();
+          } catch(e) {
+            Alert.alert("Erro", "Não foi possível excluir.");
+          }
+        }
+      }
+    ]);
   };
 
+  // --- CÁLCULOS DO HEADER ---
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
   const balance = totalIncome - totalExpense;
 
+  // --- RENDERIZAÇÃO ---
   const renderItem = ({ item }: { item: Transaction }) => {
     const iconName = item.category_icon || 'wallet-outline';
     const iconColor = item.type === 'income' ? '#10b981' : '#f87171';
@@ -188,18 +243,19 @@ export default function HomeScreen() {
           </View>
           <View>
             <Text style={styles.description}>{item.description}</Text>
-            <Text style={styles.categoryLabel}>{item.category_name || 'Sem categoria'}</Text>
+            <Text style={styles.categoryLabel}>{item.category_name || 'Geral'}</Text>
           </View>
         </View>
         <View style={styles.rightSide}>
           <Text style={[styles.amount, { color: iconColor }]}>{item.type === 'expense' ? '- ' : '+ '}{item.amount.toFixed(2)}</Text>
-          <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleDelete(item.id); }} style={styles.deleteButton}><Ionicons name="trash-outline" size={18} color="#475569" /></TouchableOpacity>
+          <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleDelete(item.id); }} style={styles.deleteButton}>
+            <Ionicons name="trash-outline" size={18} color="#475569" />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
   };
 
-  // --- COMPONENTE DO HEADER DA LISTA (GRÁFICOS) ---
   const ListHeader = () => (
     <View style={{ marginBottom: 20 }}>
       {/* BALANÇO */}
@@ -212,7 +268,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* NOVO: BARRAS DE CATEGORIA 📊 */}
+      {/* GRÁFICO DE BARRAS */}
       {chartData.length > 0 && (
         <View style={styles.chartContainer}>
           <Text style={styles.chartTitle}>Gastos por Categoria</Text>
@@ -236,24 +292,16 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <View style={styles.header}>
-        {/* Lado Esquerdo: Seletor de Data */}
         <View style={styles.dateSelector}>
           <TouchableOpacity onPress={() => changeMonth('prev')} style={styles.arrowButton}>
              <Ionicons name="chevron-back" size={24} color="#fff" />
           </TouchableOpacity>
-          
           <Text style={styles.dateText}>{getMonthName(currentDate)}</Text>
-          
           <TouchableOpacity onPress={() => changeMonth('next')} style={styles.arrowButton}>
              <Ionicons name="chevron-forward" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
-
-        {/* Lado Direito: Botão Sair (NOVO) */}
-        <TouchableOpacity 
-          onPress={logout} 
-          style={{ padding: 10, marginRight: 10, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 12 }}
-        >
+        <TouchableOpacity onPress={logout} style={{ padding: 10, marginRight: 10, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 12 }}>
           <Ionicons name="log-out-outline" size={24} color="#ef4444" />
         </TouchableOpacity>
       </View>
@@ -265,7 +313,7 @@ export default function HomeScreen() {
           data={transactions}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
-          ListHeaderComponent={ListHeader} // Aqui inserimos o gráfico
+          ListHeaderComponent={ListHeader}
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma movimentação.</Text>}
           onRefresh={fetchData}
@@ -273,30 +321,69 @@ export default function HomeScreen() {
         />
       )}
 
-      <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={handleOpenCreate}><Ionicons name="add" size={30} color="#fff" /></TouchableOpacity>
+      <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={handleOpenCreate}>
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
 
+      {/* MODAL */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{editingId ? 'Editar' : 'Novo'}</Text>
+            
             <View style={styles.typeContainer}>
-              <TouchableOpacity style={[styles.typeButton, newType === 'expense' && styles.typeExpenseActive]} onPress={() => setNewType('expense')}><Text style={[styles.typeText, newType === 'expense' && styles.typeTextActive]}>Saída</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.typeButton, newType === 'income' && styles.typeIncomeActive]} onPress={() => setNewType('income')}><Text style={[styles.typeText, newType === 'income' && styles.typeTextActive]}>Entrada</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.typeButton, newType === 'expense' && styles.typeExpenseActive]} onPress={() => setNewType('expense')}>
+                <Text style={[styles.typeText, newType === 'expense' && styles.typeTextActive]}>Saída</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.typeButton, newType === 'income' && styles.typeIncomeActive]} onPress={() => setNewType('income')}>
+                <Text style={[styles.typeText, newType === 'income' && styles.typeTextActive]}>Entrada</Text>
+              </TouchableOpacity>
             </View>
-            <TextInput style={styles.input} placeholder="Descrição" placeholderTextColor="#94a3b8" value={newDescription} onChangeText={setNewDescription} />
-            <TextInput style={[styles.input, { textAlign: 'right', fontSize: 18, fontWeight: 'bold', color: '#fff' }]} placeholder="R$ 0,00" placeholderTextColor="#94a3b8" keyboardType="numeric" value={newAmountDisplay} onChangeText={handleAmountChange} />
+
+            <TextInput 
+              style={styles.input} 
+              placeholder="Descrição (Ex: Padaria)" 
+              placeholderTextColor="#94a3b8" 
+              value={newDescription} 
+              onChangeText={setNewDescription} 
+            />
+            
+            <TextInput 
+              style={[styles.input, { textAlign: 'right', fontSize: 20, fontWeight: 'bold', color: '#fff' }]} 
+              placeholder="R$ 0,00" 
+              placeholderTextColor="#94a3b8" 
+              keyboardType="numeric" 
+              value={newAmountDisplay} 
+              onChangeText={handleAmountChange} 
+            />
+
             <Text style={styles.sectionTitle}>Categoria</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesList}>
-              {categories.filter(c => c.type === newType).map((cat) => (
-                <TouchableOpacity key={cat.id} style={[styles.categoryChip, selectedCategory === cat.id && styles.categoryChipActive]} onPress={() => setSelectedCategory(cat.id)}>
-                  <Ionicons name={cat.icon as any} size={16} color={selectedCategory === cat.id ? '#fff' : '#94a3b8'} />
-                  <Text style={[styles.categoryChipText, selectedCategory === cat.id && styles.categoryChipTextActive]}>{cat.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            
+            {/* LISTA DE CATEGORIAS AJUSTADA */}
+            <View style={{ height: 60, marginBottom: 20 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
+                {categories.filter(c => c.type === newType).map((cat) => (
+                  <TouchableOpacity 
+                    key={cat.id} 
+                    style={[styles.categoryChip, selectedCategory === cat.id && styles.categoryChipActive]} 
+                    onPress={() => setSelectedCategory(cat.id)}
+                  >
+                    <Ionicons name={cat.icon as any} size={18} color={selectedCategory === cat.id ? '#fff' : '#94a3b8'} />
+                    <Text style={[styles.categoryChipText, selectedCategory === cat.id && styles.categoryChipTextActive]}>
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
             <View style={styles.actionButtons}>
-              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => setModalVisible(false)}><Text style={styles.buttonText}>Cancelar</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Salvar</Text>}</TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => setModalVisible(false)}>
+                <Text style={styles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave} disabled={saving}>
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Salvar</Text>}
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -307,10 +394,10 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a', paddingTop: Platform.OS === 'android' ? 30 : 0 },
-  header: { backgroundColor: '#1e293b', paddingBottom: 10, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
-  dateSelector: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15 },
+  header: { backgroundColor: '#1e293b', paddingBottom: 10, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dateSelector: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, flex: 1 },
   arrowButton: { padding: 8 },
-  dateText: { color: '#fff', fontSize: 18, fontWeight: 'bold', textTransform: 'capitalize' },
+  dateText: { color: '#fff', fontSize: 18, fontWeight: 'bold', textTransform: 'capitalize', marginHorizontal: 10 },
   
   balanceCard: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
   balanceLabel: { color: '#94a3b8', fontSize: 14 },
@@ -319,7 +406,6 @@ const styles = StyleSheet.create({
   summaryItem: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   summaryText: { color: '#cbd5e1', fontWeight: '600' },
 
-  // ESTILOS DO GRÁFICO MOBILE 📊
   chartContainer: { marginTop: 10, backgroundColor: '#1e293b', padding: 16, borderRadius: 16, marginBottom: 10 },
   chartTitle: { color: '#94a3b8', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 12 },
   barRow: { marginBottom: 12 },
@@ -338,8 +424,10 @@ const styles = StyleSheet.create({
   categoryLabel: { color: '#64748b', fontSize: 12 },
   amount: { fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' },
   deleteButton: { padding: 4 },
+  
   fab: { position: 'absolute', bottom: 30, right: 30, width: 60, height: 60, borderRadius: 30, backgroundColor: '#10b981', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
+  
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#1e293b', borderRadius: 16, padding: 24 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginBottom: 20, textAlign: 'center' },
   typeContainer: { flexDirection: 'row', gap: 12, marginBottom: 20 },
@@ -350,11 +438,13 @@ const styles = StyleSheet.create({
   typeTextActive: { color: '#fff' },
   input: { backgroundColor: '#0f172a', color: '#fff', padding: 14, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#334155' },
   sectionTitle: { color: '#94a3b8', fontSize: 12, textTransform: 'uppercase', marginBottom: 8, fontWeight: 'bold' },
-  categoriesList: { marginBottom: 20, maxHeight: 40 },
-  categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#334155', marginRight: 8, borderWidth: 1, borderColor: 'transparent' },
+  
+  // ESTILO DAS CATEGORIAS (AJUSTADO)
+  categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, backgroundColor: '#334155', marginRight: 8, borderWidth: 1, borderColor: 'transparent' },
   categoryChipActive: { backgroundColor: '#10b981', borderColor: '#059669' },
-  categoryChipText: { color: '#cbd5e1', fontSize: 13 },
+  categoryChipText: { color: '#cbd5e1', fontSize: 14 },
   categoryChipTextActive: { color: '#fff', fontWeight: 'bold' },
+  
   actionButtons: { flexDirection: 'row', gap: 12, marginTop: 10 },
   button: { flex: 1, padding: 14, borderRadius: 8, alignItems: 'center' },
   cancelButton: { backgroundColor: '#334155' },

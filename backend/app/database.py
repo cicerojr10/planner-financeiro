@@ -1,25 +1,26 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Define o arquivo do banco de dados SQLite local
-SQLALCHEMY_DATABASE_URL = "sqlite:///./planner.db"
+# O .replace é uma correção técnica: o Render entrega "postgres://", mas o Python exige "postgresql://"
+database_url = os.getenv("DATABASE_URL", "sqlite:///./financeiro.db")
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-# Cria a conexão (check_same_thread=False é necessário apenas para SQLite)
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+SQLALCHEMY_DATABASE_URL = database_url
 
-# Cria a sessão para conversar com o banco
+# Verifica qual banco está sendo usado para configurar os argumentos certos
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    # Configuração para SQLite (PC)
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+    print("🔋 Rodando com Banco LOCAL (SQLite)")
+else:
+    # Configuração para PostgreSQL (Nuvem)
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+    print("☁️ Rodando com Banco NUVEM (PostgreSQL)")
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base para nossos Models herdarem
 Base = declarative_base()
-
-# Função auxiliar para pegar o banco de dados nas rotas
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()

@@ -2,12 +2,12 @@ import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 
-// 1. Definimos o "formato" do nosso Usuário
+// 1. Adicionamos ID na tipagem do User
 interface User {
+  id: number;
   email: string;
 }
 
-// 2. Definimos o que existe dentro do Contexto
 interface AuthContextData {
   signed: boolean;
   user: User | null;
@@ -17,18 +17,16 @@ interface AuthContextData {
   API_URL: string;
 }
 
-// 3. Tipamos as propriedades do Provider (recebe children)
 interface AuthProviderProps {
   children: ReactNode;
 }
 
+// ⚠️ Mantenha seu link do Render aqui
 const API_URL = 'https://meu-financeiro-8985.onrender.com';
 
-// Iniciamos o contexto informando o tipo "AuthContextData"
 export const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  // 4. Avisamos que pode ser User OU null
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -36,10 +34,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     async function loadStorageData() {
       const storedToken = await SecureStore.getItemAsync('user_token');
       const storedEmail = await SecureStore.getItemAsync('user_email');
+      const storedId = await SecureStore.getItemAsync('user_id'); // <--- Ler ID
 
-      if (storedToken && storedEmail) {
+      if (storedToken && storedEmail && storedId) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-        setUser({ email: storedEmail });
+        setUser({ email: storedEmail, id: Number(storedId) }); // <--- Salvar no Estado
       }
       setLoading(false);
     }
@@ -56,13 +55,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
 
-      const { access_token } = response.data;
+      // Agora a resposta traz o ID!
+      const { access_token, id } = response.data;
 
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       await SecureStore.setItemAsync('user_token', access_token);
       await SecureStore.setItemAsync('user_email', email);
+      await SecureStore.setItemAsync('user_id', String(id)); // <--- Guardar ID no Cofre
       
-      setUser({ email });
+      setUser({ email, id });
       return true;
     } catch (error) {
       console.log("Erro Login Mobile:", error);
@@ -74,6 +75,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(null);
     await SecureStore.deleteItemAsync('user_token');
     await SecureStore.deleteItemAsync('user_email');
+    await SecureStore.deleteItemAsync('user_id');
     delete axios.defaults.headers.common['Authorization'];
   }
 
