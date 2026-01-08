@@ -6,6 +6,8 @@ from datetime import datetime
 import sqlite3
 from . import schemas
 from . import auth
+from fastapi.middleware.cors import CORSMiddleware 
+from . import models, schemas, auth, database
 
 DB_NAME = "financeiro.db"
 
