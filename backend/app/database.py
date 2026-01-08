@@ -1,25 +1,28 @@
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-# O .replace é uma correção técnica: o Render entrega "postgres://", mas o Python exige "postgresql://"
-database_url = os.getenv("DATABASE_URL", "sqlite:///./financeiro.db")
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+# 1. Tenta pegar a URL do Banco nas Variáveis de Ambiente (Render)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-SQLALCHEMY_DATABASE_URL = database_url
+# 2. SE não tiver URL (estamos no PC local), usa o arquivo SQLite
+if not SQLALCHEMY_DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./financeiro.db"
 
-# Verifica qual banco está sendo usado para configurar os argumentos certos
+# 3. FIX: O Render às vezes manda "postgres://" mas o Python quer "postgresql://"
+if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# 4. Configura o motor do banco (Engine)
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
-    # Configuração para SQLite (PC)
+    # Configuração específica para SQLite (Local)
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
     )
-    print("🔋 Rodando com Banco LOCAL (SQLite)")
 else:
-    # Configuração para PostgreSQL (Nuvem)
+    # Configuração para Postgres (Nuvem/Neon)
     engine = create_engine(SQLALCHEMY_DATABASE_URL)
-    print("☁️ Rodando com Banco NUVEM (PostgreSQL)")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
