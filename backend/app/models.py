@@ -1,6 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
 from .database import Base
 
 class User(Base):
@@ -9,38 +8,31 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    is_active = Column(Boolean, default=True)
-
-    # Relacionamentos (Um usuário tem várias transações e categorias)
+    
+    # Um usuário tem várias transações
     transactions = relationship("Transaction", back_populates="owner")
-    categories = relationship("Category", back_populates="owner")
 
 class Category(Base):
     __tablename__ = "categories"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    color = Column(String, default="#000000")
-    icon = Column(String, nullable=True)
-    
-    # Chave estrangeira ligando ao usuário
-    user_id = Column(Integer, ForeignKey("users.id"))
-    
-    owner = relationship("User", back_populates="categories")
+    name = Column(String)
+    icon = Column(String)
+    type = Column(String) # 'income' ou 'expense' (Isso estava faltando!)
+
+    # Categorias agora são globais (não têm user_id obrigatório)
     transactions = relationship("Transaction", back_populates="category")
 
 class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    description = Column(String, index=True)
-    amount = Column(Float)  # Valor da transação
-    type = Column(String)   # "income" (receita) ou "expense" (despesa)
-    date = Column(DateTime, default=datetime.utcnow)
-    
-    # Chaves estrangeiras
     user_id = Column(Integer, ForeignKey("users.id"))
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    description = Column(String)
+    amount = Column(Float)
+    type = Column(String) # 'income' ou 'expense'
+    category_id = Column(Integer, ForeignKey("categories.id"))
+    date = Column(String) # Simplificado para String para evitar erro de fuso horário
 
     owner = relationship("User", back_populates="transactions")
     category = relationship("Category", back_populates="transactions")
