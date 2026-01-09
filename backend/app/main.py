@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Form, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from datetime import datetime
+from twilio.twiml.messaging_response import MessagingResponse
 
 # Importa suas configurações (certifique-se que database.py e models.py existem na pasta app)
 from . import models, schemas, auth, database
@@ -151,3 +152,20 @@ def get_stats(user_id: int, month: int, year: int, db: Session = Depends(get_db)
         "current": 0, "previous": 0, "diff": 0,
         "message": "Dados em manutenção", "status": "neutral"
     }
+
+# ==========================================
+# ROTA 3: WEBHOOK DO WHATSAPP
+# ==========================================
+@app.post("/whatsapp")
+async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...)):
+    # 1. Imprime no Log do Render o que chegou (para debug)
+    print(f"📩 Mensagem recebida de {From}: {Body}")
+
+    # 2. Prepara a resposta para o WhatsApp (TwiML)
+    resp = MessagingResponse()
+    
+    # Por enquanto, vamos fazer um "Papagaio" (Echo) só para testar
+    msg = resp.message(f"🤖 O Python ouviu: {Body}")
+
+    # 3. Retorna o XML que o Twilio exige
+    return Response(content=str(resp), media_type="application/xml")
