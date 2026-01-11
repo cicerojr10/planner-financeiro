@@ -62,7 +62,7 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
         """
 
         # 3. Envia para o Gemini
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
         
         # Limpeza do texto (caso a IA mande ```json ... ```)
