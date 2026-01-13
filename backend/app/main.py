@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, Form, HTTPException
+from fastapi import FastAPI, Depends, Form
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 from datetime import datetime
@@ -11,12 +11,11 @@ from . import models, database
 # Configuração do Banco
 models.Base.metadata.create_all(bind=database.engine)
 
-# Configuração da IA (Gemini)
+# Configuração da IA
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 app = FastAPI()
 
-# Dependência para pegar o banco de dados
 def get_db():
     db = database.SessionLocal()
     try:
@@ -26,7 +25,7 @@ def get_db():
 
 @app.get("/")
 def read_root():
-    return {"message": "O Pai ta on! 🚀"}
+    return {"message": "O Pai ta on e roteando! 🚀"}
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Session = Depends(get_db)):
@@ -34,49 +33,42 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
     resp = MessagingResponse()
 
     try:
-        # 1. Busca as categorias do banco para ensinar a IA
+        # 1. Pega categorias do banco
         categories = db.query(models.Category).all()
-        # Cria uma lista de texto: "Alimentação, Transporte, Lazer..."
         cat_list = ", ".join([c.name for c in categories]) 
 
-        # 2. O Prompt (A instrução para o Gemini)
+        # 2. O Prompt
         prompt = f"""
-        Você é um assistente financeiro pessoal.
-        Analise a mensagem do usuário: "{Body}".
+        Analise o gasto: "{Body}".
+        Categorias disponíveis: [{cat_list}].
         
-        Sua missão é extrair os dados para registrar uma transação.
-        
-        Regras:
-        1. Identifique se é 'expense' (gasto/compra) ou 'income' (ganho/salário).
-        2. O valor deve ser um número decimal positivo (ex: 50.00).
-        3. A categoria deve ser escolhida DENTRO desta lista: [{cat_list}]. 
-           - Se não se encaixar perfeitamente, escolha a mais próxima ou 'Outros'.
-        
-        Responda APENAS um JSON puro, sem formatação de código (markdown), neste formato:
+        Responda APENAS JSON puro neste formato:
         {{
-            "description": "descrição curta do gasto",
+            "description": "descrição",
             "amount": 0.00,
             "type": "expense",
-            "category_name": "Nome Da Categoria"
+            "category_name": "Nome da Categoria"
         }}
         """
 
-        # 3. Envia para o Gemini
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        # 3. Chama o Gemini (Tenta o Flash, se falhar tenta o Pro)
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+        except Exception as e:
+            print(f"⚠️ Flash falhou ({e}), tentando Gemini Pro...")
+            model = genai.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
         
-        # Limpeza do texto (caso a IA mande ```json ... ```)
+        # 4. Limpa e processa
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         data = json.loads(clean_text)
 
-        # 4. Encontra o ID da categoria no banco
+        # 5. Salva
         category = db.query(models.Category).filter(models.Category.name == data['category_name']).first()
-        
-        # Se a IA inventou uma categoria que não existe, usa a primeira da lista como fallback
-        category_id = category.id if category else categories[0].id
+        # Se não achar a categoria, pega a primeira da lista como fallback
+        category_id = category.id if category else (categories[0].id if categories else None)
 
-        # 5. Salva no Banco de Dados
-        # (Usando user_id=1 fixo por enquanto, já que é seu uso pessoal)
         new_transaction = models.Transaction(
             user_id=1,
             description=data['description'],
@@ -88,13 +80,11 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
         db.add(new_transaction)
         db.commit()
 
-        # 6. Responde para o WhatsApp
-        msg = f"✅ *Salvo com Sucesso!*\n\n📝 {data['description']}\n💰 R$ {data['amount']:.2f}\n📂 {data['category_name']}"
+        msg = f"✅ *Salvo!*\n📝 {data['description']}\n💰 R$ {data['amount']:.2f}\n📂 {data['category_name']}"
         resp.message(msg)
 
     except Exception as e:
         print(f"❌ Erro: {e}")
-        # Se der erro (ex: mensagem não financeira), responde amigável
-        resp.message("Desculpe, não entendi. Tente algo como: 'Gastei 50 reais no mercado'")
+        resp.message(f"Erro: {e}")
 
     return str(resp)

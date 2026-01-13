@@ -1,28 +1,15 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
+import os
 
-# 1. Tenta pegar a URL do Banco nas Variáveis de Ambiente (Render)
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-# 2. SE não tiver URL (estamos no PC local), usa o arquivo SQLite
-if not SQLALCHEMY_DATABASE_URL:
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./financeiro.db"
-
-# 3. FIX: O Render às vezes manda "postgres://" mas o Python quer "postgresql://"
-if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-# 4. Configura o motor do banco (Engine)
-if "sqlite" in SQLALCHEMY_DATABASE_URL:
-    # Configuração específica para SQLite (Local)
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    # Configuração para Postgres (Nuvem/Neon)
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# O segredo está aqui: pool_pre_ping=True testa a conexão antes de usar
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True, 
+    pool_recycle=300
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
