@@ -29,62 +29,66 @@ def read_root():
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Session = Depends(get_db)):
-    print(f"📩 Mensagem recebida de {From}: {Body}")
+    print(f"📩 Mensagem de {From}: {Body}")
     resp = MessagingResponse()
 
+    # --- BLOCO DETETIVE: LISTA O CARDÁPIO DO GOOGLE ---
+    print("🕵️‍♂️ INVESTIGANDO MODELOS DISPONÍVEIS NA SUA CONTA:")
     try:
-        # 1. Pega categorias do banco
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                print(f"   ✅ {m.name}")
+                available_models.append(m.name)
+        if not available_models:
+            print("   ⚠️ NENHUM modelo encontrado! Verifique se a API Key tem permissão.")
+    except Exception as e:
+        print(f"   ❌ Erro ao listar modelos: {e}")
+    # --------------------------------------------------
+
+    try:
+        # Tenta pegar o primeiro modelo da lista que seja 'Gemini' para não errar o nome
+        chosen_model = 'gemini-1.5-flash' # Preferido
+        
+        # Procura um nome válido na lista que o Google devolveu
+        for m in available_models:
+            if 'gemini-1.5-flash' in m:
+                chosen_model = m
+                break
+            elif 'gemini-pro' in m:
+                chosen_model = m
+        
+        print(f"🤖 Tentando usar o modelo: {chosen_model}")
+
         categories = db.query(models.Category).all()
         cat_list = ", ".join([c.name for c in categories]) 
 
-        # 2. O Prompt
         prompt = f"""
-        Analise o gasto: "{Body}".
-        Categorias disponíveis: [{cat_list}].
-        
-        Responda APENAS JSON puro neste formato:
-        {{
-            "description": "descrição",
-            "amount": 0.00,
-            "type": "expense",
-            "category_name": "Nome da Categoria"
-        }}
+        Analise o gasto: "{Body}". Categorias: [{cat_list}].
+        JSON puro: {{"description": "...", "amount": 0.00, "type": "expense", "category_name": "..."}}
         """
 
-        # 3. Chama o Gemini (Tenta o Flash, se falhar tenta o Pro)
-        try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(prompt)
-        except Exception as e:
-            print(f"⚠️ Flash falhou ({e}), tentando Gemini Pro...")
-            model = genai.GenerativeModel('gemini-pro')
-            response = model.generate_content(prompt)
+        model = genai.GenerativeModel(chosen_model)
+        response = model.generate_content(prompt)
         
-        # 4. Limpa e processa
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         data = json.loads(clean_text)
 
-        # 5. Salva
         category = db.query(models.Category).filter(models.Category.name == data['category_name']).first()
-        # Se não achar a categoria, pega a primeira da lista como fallback
         category_id = category.id if category else (categories[0].id if categories else None)
 
         new_transaction = models.Transaction(
-            user_id=1,
-            description=data['description'],
-            amount=data['amount'],
-            type=data['type'],
-            category_id=category_id,
-            date=datetime.now()
+            user_id=1, description=data['description'], amount=data['amount'],
+            type=data['type'], category_id=category_id, date=datetime.now()
         )
         db.add(new_transaction)
         db.commit()
 
-        msg = f"✅ *Salvo!*\n📝 {data['description']}\n💰 R$ {data['amount']:.2f}\n📂 {data['category_name']}"
+        msg = f"✅ *Salvo com {chosen_model.split('/')[-1]}!*\n📝 {data['description']}\n💰 R$ {data['amount']:.2f}\n📂 {data['category_name']}"
         resp.message(msg)
 
     except Exception as e:
-        print(f"❌ Erro: {e}")
-        resp.message(f"Erro: {e}")
+        print(f"❌ Erro na IA: {e}")
+        resp.message("Desculpe, deu erro na conexão com o cérebro da IA.")
 
     return str(resp)
