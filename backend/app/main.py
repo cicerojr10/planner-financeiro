@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, Form
+# MUDANÇA 1: Importamos 'Response' aqui
+from fastapi import FastAPI, Depends, Form, Response 
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 from datetime import datetime
@@ -25,7 +26,7 @@ def get_db():
 
 @app.get("/")
 def read_root():
-    return {"message": "O Pai ta on e roteando! 🚀"}
+    return {"message": "O Pai ta on! 🚀"}
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Session = Depends(get_db)):
@@ -33,16 +34,15 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
     resp = MessagingResponse()
 
     try:
-        # 1. Pega categorias do banco
+        # 1. Pega categorias
         categories = db.query(models.Category).all()
         cat_list = ", ".join([c.name for c in categories]) 
 
-        # 2. O Prompt
+        # 2. Prompt
         prompt = f"""
         Analise o gasto: "{Body}".
         Categorias disponíveis: [{cat_list}].
-        
-        Responda APENAS JSON puro neste formato:
+        Responda APENAS JSON puro:
         {{
             "description": "descrição curta",
             "amount": 0.00,
@@ -51,10 +51,8 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
         }}
         """
 
-        # 3. Chama o Gemini (Usando o modelo leve que vimos no seu log)
-        # models/gemini-2.5-flash-lite é rápido e ideal para automação
+        # 3. Chama o Gemini (Modelo Lite rápido)
         model = genai.GenerativeModel('models/gemini-2.5-flash-lite')
-        
         response = model.generate_content(prompt)
         
         # 4. Limpa e processa
@@ -63,7 +61,6 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
 
         # 5. Salva
         category = db.query(models.Category).filter(models.Category.name == data['category_name']).first()
-        # Se não achar a categoria, pega a primeira da lista como fallback
         category_id = category.id if category else (categories[0].id if categories else None)
 
         new_transaction = models.Transaction(
@@ -82,7 +79,7 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
 
     except Exception as e:
         print(f"❌ Erro: {e}")
-        # Mensagem amigável de erro
-        resp.message("Ops! Tente mandar assim: 'Gastei 50 no mercado'")
+        resp.message("Ops! Não entendi. Tente: 'Gastei 10 na padaria'")
 
-    return str(resp)
+    # MUDANÇA 2: Envolvemos a resposta num envelope XML explícito
+    return Response(content=str(resp), media_type="application/xml")
