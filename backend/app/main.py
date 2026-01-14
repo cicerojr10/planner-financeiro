@@ -1,5 +1,5 @@
-# MUDANÇA 1: Importamos 'Response' aqui
-from fastapi import FastAPI, Depends, Form, Response 
+from fastapi import FastAPI, Depends, Form, Response
+from fastapi.middleware.cors import CORSMiddleware  # <--- IMPORTANTE
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 from datetime import datetime
@@ -17,6 +17,25 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 app = FastAPI()
 
+# --- CONFIGURAÇÃO DE SEGURANÇA (CORS) ---
+# Isso libera o seu Frontend (localhost) para acessar o Backend
+origins = [
+    "http://localhost",
+    "http://localhost:5173",  # Porta padrão do Vite
+    "http://localhost:3000",  # Porta padrão do React (por garantia)
+    "https://meu-financeiro-8985.onrender.com", # Seu próprio backend
+    "*" # Em desenvolvimento, podemos liberar geral (depois restringimos)
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Liberando geral para facilitar seu teste agora
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ----------------------------------------
+
 def get_db():
     db = database.SessionLocal()
     try:
@@ -26,7 +45,13 @@ def get_db():
 
 @app.get("/")
 def read_root():
-    return {"message": "O Pai ta on! 🚀"}
+    return {"message": "API Online e com CORS liberado! 🚀"}
+
+# Nova rota para o Frontend puxar as transações
+@app.get("/transactions/{user_id}")
+def read_transactions(user_id: int, db: Session = Depends(get_db)):
+    transactions = db.query(models.Transaction).filter(models.Transaction.user_id == user_id).all()
+    return transactions
 
 @app.post("/whatsapp")
 async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Session = Depends(get_db)):
@@ -34,11 +59,9 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
     resp = MessagingResponse()
 
     try:
-        # 1. Pega categorias
         categories = db.query(models.Category).all()
         cat_list = ", ".join([c.name for c in categories]) 
 
-        # 2. Prompt
         prompt = f"""
         Analise o gasto: "{Body}".
         Categorias disponíveis: [{cat_list}].
@@ -51,15 +74,12 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
         }}
         """
 
-        # 3. Chama o Gemini (Modelo Lite rápido)
         model = genai.GenerativeModel('models/gemini-2.5-flash-lite')
         response = model.generate_content(prompt)
         
-        # 4. Limpa e processa
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
         data = json.loads(clean_text)
 
-        # 5. Salva
         category = db.query(models.Category).filter(models.Category.name == data['category_name']).first()
         category_id = category.id if category else (categories[0].id if categories else None)
 
@@ -81,5 +101,4 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
         print(f"❌ Erro: {e}")
         resp.message("Ops! Não entendi. Tente: 'Gastei 10 na padaria'")
 
-    # MUDANÇA 2: Envolvemos a resposta num envelope XML explícito
     return Response(content=str(resp), media_type="application/xml")
