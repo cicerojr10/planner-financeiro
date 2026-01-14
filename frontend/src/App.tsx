@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import './App.css';
 
-// 👇 SEU LINK DO RENDER AQUI
+// 👇 SEU LINK DO RENDER
 const API_URL = 'https://meu-financeiro-8985.onrender.com';
 
 interface Transaction {
@@ -18,9 +18,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Busca dados do usuário de teste (ID 1)
-    // Se você criou outro usuário, o ID pode mudar, mas vamos testar a conexão primeiro
-    axios.get(`${API_URL}/users/1/transactions/?month=01&year=2026`)
+    axios.get(`${API_URL}/transactions/1`)
       .then(response => {
         setTransactions(response.data);
         setLoading(false);
@@ -31,28 +29,69 @@ function App() {
       });
   }, []);
 
+  // 🧮 CÁLCULOS MATEMÁTICOS (O cérebro do Dashboard)
+  const income = transactions
+    .filter(t => t.type === 'income')
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const expense = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const balance = income - expense;
+
   return (
-    <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', color: 'white', padding: '40px' }}>
+    <div style={{ backgroundColor: '#0f172a', minHeight: '100vh', color: 'white', padding: '40px', fontFamily: 'sans-serif' }}>
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
         
         {/* HEADER */}
         <header style={{ marginBottom: '40px', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '2.5rem', marginBottom: '10px' }}>Meu Financeiro Web</h1>
+          <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', fontWeight: 'bold' }}>Meu Financeiro Web</h1>
           <p style={{ color: '#94a3b8' }}>Painel de Controle Integrado</p>
         </header>
 
-        {/* LISTA */}
+        {/* 📊 CARDS DE RESUMO (Novidade!) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+          
+          {/* Card Entradas */}
+          <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '15px', borderLeft: '5px solid #34d399' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Entradas</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#34d399', marginTop: '5px' }}>
+              R$ {income.toFixed(2)}
+            </div>
+          </div>
+
+          {/* Card Saídas */}
+          <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '15px', borderLeft: '5px solid #f87171' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Saídas</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#f87171', marginTop: '5px' }}>
+              R$ {expense.toFixed(2)}
+            </div>
+          </div>
+
+          {/* Card Saldo */}
+          <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '15px', borderLeft: '5px solid #38bdf8' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Saldo Atual</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'white', marginTop: '5px' }}>
+              R$ {balance.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        {/* LISTA DE TRANSAÇÕES */}
+        <h2 style={{ fontSize: '1.2rem', color: '#94a3b8', marginBottom: '20px' }}>Histórico Recente</h2>
+        
         {loading ? (
           <p style={{ textAlign: 'center' }}>Carregando dados da nuvem...</p>
         ) : (
           <div style={{ display: 'grid', gap: '15px' }}>
             {transactions.length === 0 ? (
               <div style={{ padding: '20px', backgroundColor: '#1e293b', borderRadius: '10px', textAlign: 'center' }}>
-                <p>Nenhuma transação encontrada neste mês (ou usuário não encontrado).</p>
-                <p style={{fontSize: '0.9rem', color: '#64748b', marginTop: '10px'}}>Dica: Adicione algo pelo App Mobile!</p>
+                <p>Nenhuma transação encontrada.</p>
               </div>
             ) : (
-              transactions.map(t => (
+              // Invertendo a lista para mostrar o mais recente primeiro (.slice().reverse())
+              transactions.slice().reverse().map(t => (
                 <div key={t.id} style={{ 
                   backgroundColor: '#1e293b', 
                   padding: '20px', 
@@ -64,7 +103,9 @@ function App() {
                 }}>
                   <div>
                     <strong style={{ display: 'block', fontSize: '1.1rem' }}>{t.description}</strong>
-                    <span style={{ color: '#64748b', fontSize: '0.9rem' }}>{new Date(t.date).toLocaleDateString()}</span>
+                    <span style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                        {new Date(t.date).toLocaleDateString()} às {new Date(t.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </span>
                   </div>
                   <span style={{ 
                     color: t.type === 'income' ? '#34d399' : '#f87171',
