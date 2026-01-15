@@ -102,3 +102,18 @@ async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Ses
         resp.message("Ops! Não entendi. Tente: 'Gastei 10 na padaria'")
 
     return Response(content=str(resp), media_type="application/xml")
+
+# Rota para DELETAR uma transação
+@app.delete("/transactions/{transaction_id}")
+def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
+    # 1. Procura a transação no banco
+    transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+    
+    # 2. Se achar, deleta
+    if transaction:
+        db.delete(transaction)
+        db.commit()
+        return {"message": "Transação deletada!"}
+    
+    # 3. Se não achar, avisa
+    return {"error": "Transação não encontrada"}
