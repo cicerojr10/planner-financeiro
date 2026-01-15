@@ -6,6 +6,7 @@ from datetime import datetime
 import google.generativeai as genai
 import json
 import os
+from pydantic import BaseModel
 
 from . import models, database
 
@@ -46,6 +47,31 @@ def get_db():
 @app.get("/")
 def read_root():
     return {"message": "API Online e com CORS liberado! 🚀"}
+
+# 1. Adicione essa classe para validar os dados que chegam
+class TransactionCreate(BaseModel):
+    description: str
+    amount: float
+    type: str  # 'income' ou 'expense'
+    user_id: int # Vamos mandar o ID 1 fixo por enquanto
+
+# 2. Adicione essa Rota POST
+@app.post("/transactions/")
+def create_transaction(transaction: TransactionCreate, db: Session = Depends(get_db)):
+    # Cria a nova transação
+    db_transaction = models.Transaction(
+        description=transaction.description,
+        amount=transaction.amount,
+        type=transaction.type,
+        user_id=transaction.user_id,
+        date=datetime.now() # Pega a data/hora de agora automático
+    )
+    
+    # Salva no banco
+    db.add(db_transaction)
+    db.commit()
+    db.refresh(db_transaction)
+    return db_transaction
 
 # Nova rota para o Frontend puxar as transações
 @app.get("/transactions/{user_id}")
