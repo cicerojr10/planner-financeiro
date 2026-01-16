@@ -42,10 +42,11 @@ export function Transactions() {
       setTransactions(transactions.filter(t => t.id !== id));
       
       axios.delete(`${API_URL}/transactions/${id}`)
-        .catch(err => {
-          alert("Erro ao deletar (Backend atualizando?)");
-          setTransactions(backup);
-        });
+.catch(err => {
+  console.error(err); // Agora estamos usando o 'err'!
+  alert("Erro ao deletar (Backend atualizando?)");
+  setTransactions(backup);
+});
     }
   }
 
