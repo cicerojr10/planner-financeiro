@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Trash2, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
-  Utensils, Car, Gamepad2, Activity, Home, Banknote, CircleHelp, Tag
+  Utensils, Car, Gamepad2, Activity, Home, Banknote, CircleHelp, ShoppingBag
 } from 'lucide-react';
 
-const API_URL = 'https://meu-financeiro-8985.onrender.com'; // ⚠️ CONFIRA SE ESSE É SEU LINK CERTO
+// ⚠️ IMPORTANTE: Verifique se este link é o do SEU Render
+const API_URL = 'https://planner-financeiro-8985.onrender.com';
 
 // --- TIPOS (O que o Backend manda) ---
 interface Category {
@@ -21,11 +22,11 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   date: string;
-  category?: Category; // A transação agora pode ter uma categoria
+  category?: Category; // A transação agora traz os detalhes da categoria
 }
 
 // --- MAPA DE ÍCONES ---
-// Transforma o texto "utensils" do banco no ícone real do React
+// Conecta o nome que está no banco (texto) com o componente visual (desenho)
 const iconMap: Record<string, any> = {
   'utensils': Utensils,
   'car': Car,
@@ -33,12 +34,13 @@ const iconMap: Record<string, any> = {
   'activity': Activity,
   'home': Home,
   'banknote': Banknote,
+  'shopping-bag': ShoppingBag,
   'circle': CircleHelp
 };
 
 export function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]); // Lista de categorias
+  const [categories, setCategories] = useState<Category[]>([]); // Lista para guardar as categorias
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -47,7 +49,7 @@ export function Transactions() {
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
-  const [selectedCatId, setSelectedCatId] = useState<string>(''); // ID da categoria selecionada
+  const [selectedCatId, setSelectedCatId] = useState<string>(''); // Qual categoria o usuário clicou
 
   useEffect(() => {
     loadData();
@@ -56,12 +58,13 @@ export function Transactions() {
   // Carrega Transações E Categorias ao mesmo tempo
   function loadData() {
     setLoading(true);
-    // 1. Pega as categorias
+    
+    // 1. Busca as categorias disponíveis
     axios.get(`${API_URL}/categories`)
       .then(res => setCategories(res.data))
       .catch(err => console.error("Erro categorias:", err));
 
-    // 2. Pega as transações
+    // 2. Busca as transações
     axios.get(`${API_URL}/transactions/1`)
       .then(res => {
         setTransactions(res.data);
@@ -84,7 +87,7 @@ export function Transactions() {
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
 
-    // Validação simples
+    // Validação: Obriga a escolher uma categoria
     if (!selectedCatId) {
       alert("Por favor, selecione uma categoria!");
       return;
@@ -95,13 +98,14 @@ export function Transactions() {
       amount: parseFloat(newAmount),
       type: newType,
       user_id: 1,
-      category_id: parseInt(selectedCatId) // Envia o ID da categoria
+      category_id: parseInt(selectedCatId) // Envia o ID da categoria escolhida
     };
 
     axios.post(`${API_URL}/transactions/`, payload)
       .then(response => {
         setTransactions([...transactions, response.data]);
         setIsModalOpen(false);
+        // Limpa o formulário
         setNewDesc('');
         setNewAmount('');
         setSelectedCatId('');
@@ -112,7 +116,7 @@ export function Transactions() {
       });
   }
 
-  // Função para renderizar o ícone correto na lista
+  // Função auxiliar para desenhar o ícone certo
   const renderIcon = (iconName: string) => {
     const IconComponent = iconMap[iconName] || CircleHelp;
     return <IconComponent size={18} />;
@@ -168,7 +172,7 @@ export function Transactions() {
                   <tr key={t.id} className="hover:bg-slate-800/30 group">
                     <td className="p-4 text-slate-400 text-sm">{new Date(t.date).toLocaleDateString()}</td>
                     
-                    {/* COLUNA CATEGORIA (NOVA) */}
+                    {/* NOVA COLUNA: Ícone + Nome da Categoria */}
                     <td className="p-4">
                       {t.category ? (
                         <span className="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-medium" style={{ color: t.category.color }}>
@@ -214,7 +218,7 @@ export function Transactions() {
                 />
               </div>
 
-              {/* SELETOR DE CATEGORIA (NOVO) */}
+              {/* SELETOR DE CATEGORIA (GRIDE DE BOTÕES) */}
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Categoria</label>
                 <div className="grid grid-cols-3 gap-2">
