@@ -1,8 +1,19 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Trash2, Search, ArrowUpCircle, ArrowDownCircle, Plus, X } from 'lucide-react';
+import { 
+  Trash2, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
+  Utensils, Car, Gamepad2, Activity, Home, Banknote, CircleHelp, Tag
+} from 'lucide-react';
 
-const API_URL = 'https://meu-financeiro-8985.onrender.com';
+const API_URL = 'https://meu-financeiro-8985.onrender.com'; // ⚠️ CONFIRA SE ESSE É SEU LINK CERTO
+
+// --- TIPOS (O que o Backend manda) ---
+interface Category {
+  id: number;
+  name: string;
+  icon: string;
+  color: string;
+}
 
 interface Transaction {
   id: number;
@@ -10,10 +21,24 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   date: string;
+  category?: Category; // A transação agora pode ter uma categoria
 }
+
+// --- MAPA DE ÍCONES ---
+// Transforma o texto "utensils" do banco no ícone real do React
+const iconMap: Record<string, any> = {
+  'utensils': Utensils,
+  'car': Car,
+  'gamepad-2': Gamepad2,
+  'activity': Activity,
+  'home': Home,
+  'banknote': Banknote,
+  'circle': CircleHelp
+};
 
 export function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]); // Lista de categorias
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -22,59 +47,76 @@ export function Transactions() {
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
+  const [selectedCatId, setSelectedCatId] = useState<string>(''); // ID da categoria selecionada
 
   useEffect(() => {
-    loadTransactions();
+    loadData();
   }, []);
 
-  function loadTransactions() {
+  // Carrega Transações E Categorias ao mesmo tempo
+  function loadData() {
+    setLoading(true);
+    // 1. Pega as categorias
+    axios.get(`${API_URL}/categories`)
+      .then(res => setCategories(res.data))
+      .catch(err => console.error("Erro categorias:", err));
+
+    // 2. Pega as transações
     axios.get(`${API_URL}/transactions/1`)
-      .then(response => {
-        setTransactions(response.data);
+      .then(res => {
+        setTransactions(res.data);
         setLoading(false);
       })
-      .catch(error => console.error("Erro:", error));
+      .catch(err => console.error("Erro transações:", err));
   }
 
   function handleDelete(id: number) {
     if (confirm('Tem certeza?')) {
       const backup = [...transactions];
       setTransactions(transactions.filter(t => t.id !== id));
-      
-      axios.delete(`${API_URL}/transactions/${id}`)
-.catch(err => {
-  console.error(err); // Agora estamos usando o 'err'!
-  alert("Erro ao deletar (Backend atualizando?)");
-  setTransactions(backup);
-});
+      axios.delete(`${API_URL}/transactions/${id}`).catch(() => {
+          alert("Erro ao deletar");
+          setTransactions(backup);
+      });
     }
   }
 
-  // 💾 FUNÇÃO DE SALVAR (CREATE)
   function handleSave(e: React.FormEvent) {
-    e.preventDefault(); // Não recarregar a página
+    e.preventDefault();
+
+    // Validação simples
+    if (!selectedCatId) {
+      alert("Por favor, selecione uma categoria!");
+      return;
+    }
 
     const payload = {
       description: newDesc,
-      amount: parseFloat(newAmount), // Converte texto pra numero
+      amount: parseFloat(newAmount),
       type: newType,
-      user_id: 1 // Fixo por enquanto
+      user_id: 1,
+      category_id: parseInt(selectedCatId) // Envia o ID da categoria
     };
 
     axios.post(`${API_URL}/transactions/`, payload)
       .then(response => {
-        // Sucesso! Adiciona na lista e fecha modal
         setTransactions([...transactions, response.data]);
         setIsModalOpen(false);
-        // Limpa campos
         setNewDesc('');
         setNewAmount('');
+        setSelectedCatId('');
       })
       .catch(error => {
         console.error(error);
-        alert("Erro ao salvar. Verifique se o Render já terminou o deploy.");
+        alert("Erro ao salvar.");
       });
   }
+
+  // Função para renderizar o ícone correto na lista
+  const renderIcon = (iconName: string) => {
+    const IconComponent = iconMap[iconName] || CircleHelp;
+    return <IconComponent size={18} />;
+  };
 
   const filteredTransactions = transactions.filter(t => 
     t.description.toLowerCase().includes(searchTerm.toLowerCase())
@@ -82,12 +124,10 @@ export function Transactions() {
 
   return (
     <div className="space-y-6 relative">
-      
-      {/* HEADER + BOTÃO NOVA */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Transações</h1>
-          <p className="text-slate-400">Gerencie suas finanças.</p>
+          <p className="text-slate-400">Gerencie suas finanças com inteligência 🧠</p>
         </div>
         
         <div className="flex gap-3 w-full md:w-auto">
@@ -109,13 +149,13 @@ export function Transactions() {
         </div>
       </div>
 
-      {/* TABELA (IDÊNTICA A ANTERIOR) */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-800/50 text-slate-400 text-sm uppercase">
                 <th className="p-4">Data</th>
+                <th className="p-4">Categoria</th>
                 <th className="p-4">Descrição</th>
                 <th className="p-4">Valor</th>
                 <th className="p-4 text-right">Ações</th>
@@ -123,12 +163,24 @@ export function Transactions() {
             </thead>
             <tbody className="divide-y divide-slate-800">
               {loading ? (
-                <tr><td colSpan={4} className="p-8 text-center text-slate-500">Carregando...</td></tr>
+                <tr><td colSpan={5} className="p-8 text-center text-slate-500">Carregando...</td></tr>
               ) : filteredTransactions.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-800/30 group">
                     <td className="p-4 text-slate-400 text-sm">{new Date(t.date).toLocaleDateString()}</td>
-                    <td className="p-4 text-slate-200 font-medium flex items-center gap-3">
-                      {t.type === 'income' ? <ArrowUpCircle size={18} className="text-emerald-500" /> : <ArrowDownCircle size={18} className="text-red-500" />}
+                    
+                    {/* COLUNA CATEGORIA (NOVA) */}
+                    <td className="p-4">
+                      {t.category ? (
+                        <span className="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-medium" style={{ color: t.category.color }}>
+                          {renderIcon(t.category.icon)}
+                          {t.category.name}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs">-</span>
+                      )}
+                    </td>
+
+                    <td className="p-4 text-slate-200 font-medium">
                       {t.description}
                     </td>
                     <td className={`p-4 font-bold ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -146,87 +198,69 @@ export function Transactions() {
         </div>
       </div>
 
-      {/* 🟢 O MODAL (JANELA FLUTUANTE) */}
+      {/* MODAL COM SELETOR DE CATEGORIA */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl p-6 relative">
-            
-            {/* Fechar Modal */}
-            <button 
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"
-            >
-              <X size={24} />
-            </button>
-
+            <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"><X size={24} /></button>
             <h2 className="text-xl font-bold text-slate-100 mb-6">Nova Transação</h2>
 
             <form onSubmit={handleSave} className="space-y-4">
-              
-              {/* Descrição */}
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Descrição</label>
-                <input 
-                  autoFocus
-                  type="text" 
-                  placeholder="Ex: Coxinha"
-                  required
+                <input autoFocus type="text" placeholder="Ex: Coxinha" required
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:border-emerald-500 outline-none"
-                  value={newDesc}
-                  onChange={e => setNewDesc(e.target.value)}
+                  value={newDesc} onChange={e => setNewDesc(e.target.value)}
                 />
               </div>
 
-              {/* Valor e Tipo (Lado a Lado) */}
+              {/* SELETOR DE CATEGORIA (NOVO) */}
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Categoria</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {categories.map(cat => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedCatId(String(cat.id))}
+                      className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${selectedCatId === String(cat.id) 
+                        ? 'bg-slate-800 border-emerald-500 text-emerald-400 ring-1 ring-emerald-500' 
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-600'}`}
+                    >
+                      <span style={{ color: selectedCatId === String(cat.id) ? 'inherit' : cat.color }}>
+                        {renderIcon(cat.icon)}
+                      </span>
+                      <span className="text-[10px] mt-1 font-medium">{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex gap-4">
                 <div className="flex-1">
                   <label className="block text-sm text-slate-400 mb-1">Valor (R$)</label>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    placeholder="0.00"
-                    required
+                  <input type="number" step="0.01" placeholder="0.00" required
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:border-emerald-500 outline-none"
-                    value={newAmount}
-                    onChange={e => setNewAmount(e.target.value)}
+                    value={newAmount} onChange={e => setNewAmount(e.target.value)}
                   />
                 </div>
                 
                 <div className="w-1/3">
                   <label className="block text-sm text-slate-400 mb-1">Tipo</label>
                   <div className="flex bg-slate-950 rounded-lg border border-slate-800 p-1">
-                     <button
-                       type="button"
-                       onClick={() => setNewType('income')}
-                       className={`flex-1 rounded py-2 flex justify-center ${newType === 'income' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500'}`}
-                     >
-                       <ArrowUpCircle size={20} />
-                     </button>
-                     <button
-                       type="button"
-                       onClick={() => setNewType('expense')}
-                       className={`flex-1 rounded py-2 flex justify-center ${newType === 'expense' ? 'bg-red-500/20 text-red-400' : 'text-slate-500'}`}
-                     >
-                       <ArrowDownCircle size={20} />
-                     </button>
+                     <button type="button" onClick={() => setNewType('income')} className={`flex-1 rounded py-2 flex justify-center ${newType === 'income' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500'}`}><ArrowUpCircle size={20} /></button>
+                     <button type="button" onClick={() => setNewType('expense')} className={`flex-1 rounded py-2 flex justify-center ${newType === 'expense' ? 'bg-red-500/20 text-red-400' : 'text-slate-500'}`}><ArrowDownCircle size={20} /></button>
                   </div>
                 </div>
               </div>
 
-              {/* Botão Salvar */}
-              <button 
-                type="submit"
-                className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold py-3 rounded-lg mt-4 transition-transform active:scale-95"
-              >
+              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold py-3 rounded-lg mt-4 transition-transform active:scale-95">
                 Salvar Transação
               </button>
-
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
-// Forçando atualização da Vercel
