@@ -85,6 +85,15 @@ def seed_categories(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Categorias criadas!", "created": created}
 
+# ROTA DE EMERGÊNCIA (Use com cuidado!)
+@app.get("/reset_db")
+def reset_database():
+    # 1. Apaga TODAS as tabelas (limpeza total)
+    models.Base.metadata.drop_all(bind=database.engine)
+    # 2. Cria tudo de novo (com a estrutura correta)
+    models.Base.metadata.create_all(bind=database.engine)
+    return {"message": "Banco de dados resetado com sucesso! Agora está limpo."}
+
 # 2. Listar todas as categorias (Para o Dropdown do Frontend)
 @app.get("/categories", response_model=List[CategoryResponse])
 def get_categories(db: Session = Depends(get_db)):
