@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 // ⚠️ IMPORTANTE: Verifique se este link é o do SEU Render
-const API_URL = 'https://planner-financeiro-8985.onrender.com';
+const API_URL = 'https://meu-financeiro-8985.onrender.com';
 
 // --- TIPOS (O que o Backend manda) ---
 interface Category {
