@@ -1,42 +1,26 @@
-from fastapi import FastAPI, Depends, Form, Response
-from fastapi.middleware.cors import CORSMiddleware  # <--- IMPORTANTE
-from sqlalchemy.orm import Session
-from twilio.twiml.messaging_response import MessagingResponse
-from datetime import datetime
-import google.generativeai as genai
-import json
-import os
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session, joinedload
+from typing import List, Optional
 from pydantic import BaseModel
-
+from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
 from . import models, database
 
-# Configuração do Banco
+# Cria as tabelas no banco (se não existirem)
 models.Base.metadata.create_all(bind=database.engine)
-
-# Configuração da IA
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 app = FastAPI()
 
-# --- CONFIGURAÇÃO DE SEGURANÇA (CORS) ---
-# Isso libera o seu Frontend (localhost) para acessar o Backend
-origins = [
-    "http://localhost",
-    "http://localhost:5173",  # Porta padrão do Vite
-    "http://localhost:3000",  # Porta padrão do React (por garantia)
-    "https://meu-financeiro-8985.onrender.com", # Seu próprio backend
-    "*" # Em desenvolvimento, podemos liberar geral (depois restringimos)
-]
-
+# Configuração de CORS (Para o Frontend acessar)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Liberando geral para facilitar seu teste agora
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# ----------------------------------------
 
+# Dependência para pegar o Banco de Dados
 def get_db():
     db = database.SessionLocal()
     try:
@@ -44,102 +28,96 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/")
-def read_root():
-    return {"message": "API Online e com CORS liberado! 🚀"}
+# --- SCHEMAS (VALIDAÇÃO DE DADOS) ---
 
-# 1. Adicione essa classe para validar os dados que chegam
+# O que precisamos receber para criar uma transação
 class TransactionCreate(BaseModel):
     description: str
     amount: float
-    type: str  # 'income' ou 'expense'
-    user_id: int # Vamos mandar o ID 1 fixo por enquanto
+    type: str
+    user_id: int
+    category_id: Optional[int] = None # Agora aceitamos o ID da categoria
 
-# 2. Adicione essa Rota POST
+# O que vamos devolver para o Frontend (incluindo os detalhes da categoria)
+class CategoryResponse(BaseModel):
+    id: int
+    name: str
+    icon: str
+    color: str
+    class Config:
+        orm_mode = True
+
+class TransactionResponse(BaseModel):
+    id: int
+    description: str
+    amount: float
+    type: str
+    date: datetime
+    category: Optional[CategoryResponse] = None # Aninha os dados da categoria
+    class Config:
+        orm_mode = True
+
+# --- ROTAS ---
+
+# 1. Rota Especial: "Resetar e Semear" (Rode isso uma vez para criar as categorias)
+@app.post("/seed_categories")
+def seed_categories(db: Session = Depends(get_db)):
+    # Lista de categorias padrão
+    defaults = [
+        {"name": "Alimentação", "icon": "utensils", "color": "#f87171"}, # Vermelho
+        {"name": "Transporte", "icon": "car", "color": "#fbbf24"},      # Amarelo
+        {"name": "Lazer", "icon": "gamepad-2", "color": "#a78bfa"},    # Roxo
+        {"name": "Saúde", "icon": "activity", "color": "#34d399"},     # Verde
+        {"name": "Contas", "icon": "home", "color": "#60a5fa"},        # Azul
+        {"name": "Salário", "icon": "banknote", "color": "#34d399"},   # Verde Income
+        {"name": "Outros", "icon": "circle", "color": "#94a3b8"},      # Cinza
+    ]
+    
+    created = []
+    for cat in defaults:
+        # Verifica se já existe para não duplicar
+        exists = db.query(models.Category).filter(models.Category.name == cat["name"]).first()
+        if not exists:
+            new_cat = models.Category(**cat)
+            db.add(new_cat)
+            created.append(cat["name"])
+    
+    db.commit()
+    return {"message": "Categorias criadas!", "created": created}
+
+# 2. Listar todas as categorias (Para o Dropdown do Frontend)
+@app.get("/categories", response_model=List[CategoryResponse])
+def get_categories(db: Session = Depends(get_db)):
+    return db.query(models.Category).all()
+
+# 3. Listar Transações (Agora traz a categoria junto)
+@app.get("/transactions/{user_id}", response_model=List[TransactionResponse])
+def read_transactions(user_id: int, db: Session = Depends(get_db)):
+    # 'joinedload' faz a mágica de trazer os dados da categoria junto na consulta
+    return db.query(models.Transaction).filter(models.Transaction.user_id == user_id).options(joinedload(models.Transaction.category)).all()
+
+# 4. Criar Transação (Com Categoria)
 @app.post("/transactions/")
 def create_transaction(transaction: TransactionCreate, db: Session = Depends(get_db)):
-    # Cria a nova transação
     db_transaction = models.Transaction(
         description=transaction.description,
         amount=transaction.amount,
         type=transaction.type,
         user_id=transaction.user_id,
-        date=datetime.now() # Pega a data/hora de agora automático
+        category_id=transaction.category_id, # Salva o ID da categoria
+        date=datetime.now()
     )
-    
-    # Salva no banco
     db.add(db_transaction)
     db.commit()
     db.refresh(db_transaction)
     return db_transaction
 
-# Nova rota para o Frontend puxar as transações
-@app.get("/transactions/{user_id}")
-def read_transactions(user_id: int, db: Session = Depends(get_db)):
-    transactions = db.query(models.Transaction).filter(models.Transaction.user_id == user_id).all()
-    return transactions
-
-@app.post("/whatsapp")
-async def whatsapp_webhook(Body: str = Form(...), From: str = Form(...), db: Session = Depends(get_db)):
-    print(f"📩 Mensagem recebida de {From}: {Body}")
-    resp = MessagingResponse()
-
-    try:
-        categories = db.query(models.Category).all()
-        cat_list = ", ".join([c.name for c in categories]) 
-
-        prompt = f"""
-        Analise o gasto: "{Body}".
-        Categorias disponíveis: [{cat_list}].
-        Responda APENAS JSON puro:
-        {{
-            "description": "descrição curta",
-            "amount": 0.00,
-            "type": "expense",
-            "category_name": "Nome da Categoria"
-        }}
-        """
-
-        model = genai.GenerativeModel('models/gemini-2.5-flash-lite')
-        response = model.generate_content(prompt)
-        
-        clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(clean_text)
-
-        category = db.query(models.Category).filter(models.Category.name == data['category_name']).first()
-        category_id = category.id if category else (categories[0].id if categories else None)
-
-        new_transaction = models.Transaction(
-            user_id=1,
-            description=data['description'],
-            amount=data['amount'],
-            type=data['type'],
-            category_id=category_id,
-            date=datetime.now()
-        )
-        db.add(new_transaction)
-        db.commit()
-
-        msg = f"✅ *Salvo!*\n📝 {data['description']}\n💰 R$ {data['amount']:.2f}\n📂 {data['category_name']}"
-        resp.message(msg)
-
-    except Exception as e:
-        print(f"❌ Erro: {e}")
-        resp.message("Ops! Não entendi. Tente: 'Gastei 10 na padaria'")
-
-    return Response(content=str(resp), media_type="application/xml")
-
-# Rota para DELETAR uma transação
+# 5. Deletar Transação
 @app.delete("/transactions/{transaction_id}")
 def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
-    # 1. Procura a transação no banco
     transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
-    
-    # 2. Se achar, deleta
     if transaction:
         db.delete(transaction)
         db.commit()
         return {"message": "Transação deletada!"}
-    
-    # 3. Se não achar, avisa
     return {"error": "Transação não encontrada"}
