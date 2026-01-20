@@ -130,3 +130,24 @@ def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
         db.commit()
         return {"message": "Transação deletada!"}
     return {"error": "Transação não encontrada"}
+
+# Rota de EDITAR (Atualizar Transação)
+@app.put("/transactions/{transaction_id}")
+def update_transaction(transaction_id: int, transaction: TransactionCreate, db: Session = Depends(get_db)):
+    # 1. Busca a transação antiga
+    db_transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+    
+    # 2. Se não achar, avisa o erro
+    if not db_transaction:
+        raise HTTPException(status_code=404, detail="Transação não encontrada")
+    
+    # 3. Atualiza os dados com o que veio do Frontend
+    db_transaction.description = transaction.description
+    db_transaction.amount = transaction.amount
+    db_transaction.type = transaction.type
+    db_transaction.category_id = transaction.category_id
+    
+    # 4. Salva a mudança
+    db.commit()
+    db.refresh(db_transaction)
+    return db_transaction
