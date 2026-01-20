@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  Trash2, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
-  Utensils, Car, Gamepad2, Activity, Home, Banknote, CircleHelp, ShoppingBag
+  Trash2, Pencil, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
+  Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp
 } from 'lucide-react';
 
-// ⚠️ IMPORTANTE: Verifique se este link é o do SEU Render
+// ⚠️ CONFIRA SE ESSE É O SEU LINK (Sem barra no final)
 const API_URL = 'https://meu-financeiro-8985.onrender.com';
 
-// --- TIPOS (O que o Backend manda) ---
 interface Category {
   id: number;
   name: string;
@@ -22,59 +21,44 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   date: string;
-  category?: Category; // A transação agora traz os detalhes da categoria
+  category?: Category;
+  category_id?: number; // Importante para a edição saber qual ID estava salvo
 }
 
-// --- MAPA DE ÍCONES ---
-// Conecta o nome que está no banco (texto) com o componente visual (desenho)
 const iconMap: Record<string, any> = {
-  'utensils': Utensils,
-  'car': Car,
-  'gamepad-2': Gamepad2,
-  'activity': Activity,
-  'home': Home,
-  'banknote': Banknote,
-  'shopping-bag': ShoppingBag,
-  'circle': CircleHelp
+  'utensils': Utensils, 'car': Car, 'gamepad-2': Gamepad2, 
+  'activity': Activity, 'home': Home, 'banknote': Banknote, 
+  'shopping-bag': ShoppingBag, 'circle': CircleHelp
 };
 
 export function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]); // Lista para guardar as categorias
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // ESTADOS DO MODAL
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null); // NULL = Criando, NUMERO = Editando
+
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
-  const [selectedCatId, setSelectedCatId] = useState<string>(''); // Qual categoria o usuário clicou
+  const [selectedCatId, setSelectedCatId] = useState<string>('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  // Carrega Transações E Categorias ao mesmo tempo
   function loadData() {
     setLoading(true);
-    
-    // 1. Busca as categorias disponíveis
-    axios.get(`${API_URL}/categories`)
-      .then(res => setCategories(res.data))
-      .catch(err => console.error("Erro categorias:", err));
-
-    // 2. Busca as transações
-    axios.get(`${API_URL}/transactions/1`)
-      .then(res => {
+    axios.get(`${API_URL}/categories`).then(res => setCategories(res.data));
+    axios.get(`${API_URL}/transactions/1`).then(res => {
         setTransactions(res.data);
         setLoading(false);
-      })
-      .catch(err => console.error("Erro transações:", err));
+    });
   }
 
   function handleDelete(id: number) {
-    if (confirm('Tem certeza?')) {
+    if (confirm('Tem certeza que deseja excluir?')) {
       const backup = [...transactions];
       setTransactions(transactions.filter(t => t.id !== id));
       axios.delete(`${API_URL}/transactions/${id}`).catch(() => {
@@ -84,39 +68,62 @@ export function Transactions() {
     }
   }
 
+  // ✏️ PREPARA O MODAL PARA EDIÇÃO
+  function handleEdit(transaction: Transaction) {
+    setEditingId(transaction.id); // Marca que estamos editando
+    setNewDesc(transaction.description);
+    setNewAmount(transaction.amount.toString());
+    setNewType(transaction.type);
+    
+    // Tenta pegar o ID da categoria (pode vir dentro do objeto ou direto)
+    const catId = transaction.category?.id || transaction.category_id;
+    setSelectedCatId(catId ? String(catId) : '');
+    
+    setIsModalOpen(true);
+  }
+
+  // ✨ PREPARA O MODAL PARA CRIAÇÃO (Limpa tudo)
+  function handleNew() {
+    setEditingId(null); // Marca que é novo
+    setNewDesc('');
+    setNewAmount('');
+    setNewType('expense');
+    setSelectedCatId('');
+    setIsModalOpen(true);
+  }
+
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-
-    // Validação: Obriga a escolher uma categoria
-    if (!selectedCatId) {
-      alert("Por favor, selecione uma categoria!");
-      return;
-    }
+    if (!selectedCatId) return alert("Selecione uma categoria!");
 
     const payload = {
       description: newDesc,
       amount: parseFloat(newAmount),
       type: newType,
       user_id: 1,
-      category_id: parseInt(selectedCatId) // Envia o ID da categoria escolhida
+      category_id: parseInt(selectedCatId)
     };
 
-    axios.post(`${API_URL}/transactions/`, payload)
-      .then(response => {
-        setTransactions([...transactions, response.data]);
-        setIsModalOpen(false);
-        // Limpa o formulário
-        setNewDesc('');
-        setNewAmount('');
-        setSelectedCatId('');
-      })
-      .catch(error => {
-        console.error(error);
-        alert("Erro ao salvar.");
-      });
+    if (editingId) {
+      // 🔄 MODO EDIÇÃO (PUT)
+      axios.put(`${API_URL}/transactions/${editingId}`, payload)
+        .then(response => {
+          // Atualiza a lista trocando o antigo pelo novo
+          setTransactions(transactions.map(t => t.id === editingId ? response.data : t));
+          setIsModalOpen(false);
+        })
+        .catch(err => alert("Erro ao editar. Verifique se o Backend atualizou."));
+    } else {
+      // ➕ MODO CRIAÇÃO (POST)
+      axios.post(`${API_URL}/transactions/`, payload)
+        .then(response => {
+          setTransactions([...transactions, response.data]);
+          setIsModalOpen(false);
+        })
+        .catch(err => alert("Erro ao criar."));
+    }
   }
 
-  // Função auxiliar para desenhar o ícone certo
   const renderIcon = (iconName: string) => {
     const IconComponent = iconMap[iconName] || CircleHelp;
     return <IconComponent size={18} />;
@@ -131,7 +138,7 @@ export function Transactions() {
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Transações</h1>
-          <p className="text-slate-400">Gerencie suas finanças com inteligência 🧠</p>
+          <p className="text-slate-400">Gerencie suas finanças.</p>
         </div>
         
         <div className="flex gap-3 w-full md:w-auto">
@@ -144,7 +151,7 @@ export function Transactions() {
             />
           </div>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleNew} // 👈 Chama a função de limpar antes de abrir
             className="bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
           >
             <Plus size={20} />
@@ -171,26 +178,24 @@ export function Transactions() {
               ) : filteredTransactions.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-800/30 group">
                     <td className="p-4 text-slate-400 text-sm">{new Date(t.date).toLocaleDateString()}</td>
-                    
-                    {/* NOVA COLUNA: Ícone + Nome da Categoria */}
                     <td className="p-4">
                       {t.category ? (
                         <span className="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-medium" style={{ color: t.category.color }}>
                           {renderIcon(t.category.icon)}
                           {t.category.name}
                         </span>
-                      ) : (
-                        <span className="text-slate-600 text-xs">-</span>
-                      )}
+                      ) : <span className="text-slate-600">-</span>}
                     </td>
-
-                    <td className="p-4 text-slate-200 font-medium">
-                      {t.description}
-                    </td>
+                    <td className="p-4 text-slate-200 font-medium">{t.description}</td>
                     <td className={`p-4 font-bold ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
                       {t.type === 'expense' ? '- ' : '+ '}R$ {t.amount.toFixed(2)}
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right flex justify-end gap-2">
+                      {/* BOTÃO EDITAR */}
+                      <button onClick={() => handleEdit(t)} className="p-2 text-slate-500 hover:text-blue-400 transition-all opacity-0 group-hover:opacity-100">
+                        <Pencil size={18} />
+                      </button>
+                      {/* BOTÃO DELETAR */}
                       <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-500 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100">
                         <Trash2 size={18} />
                       </button>
@@ -202,12 +207,13 @@ export function Transactions() {
         </div>
       </div>
 
-      {/* MODAL COM SELETOR DE CATEGORIA */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl p-6 relative">
             <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"><X size={24} /></button>
-            <h2 className="text-xl font-bold text-slate-100 mb-6">Nova Transação</h2>
+            <h2 className="text-xl font-bold text-slate-100 mb-6">
+              {editingId ? 'Editar Transação' : 'Nova Transação'}
+            </h2>
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -218,7 +224,6 @@ export function Transactions() {
                 />
               </div>
 
-              {/* SELETOR DE CATEGORIA (GRIDE DE BOTÕES) */}
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Categoria</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -259,7 +264,7 @@ export function Transactions() {
               </div>
 
               <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold py-3 rounded-lg mt-4 transition-transform active:scale-95">
-                Salvar Transação
+                {editingId ? 'Salvar Alterações' : 'Criar Transação'}
               </button>
             </form>
           </div>
