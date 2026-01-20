@@ -108,11 +108,13 @@ export function Transactions() {
       // 🔄 MODO EDIÇÃO (PUT)
       axios.put(`${API_URL}/transactions/${editingId}`, payload)
         .then(response => {
-          // Atualiza a lista trocando o antigo pelo novo
           setTransactions(transactions.map(t => t.id === editingId ? response.data : t));
           setIsModalOpen(false);
         })
-        .catch(err => alert("Erro ao editar. Verifique se o Backend atualizou."));
+        .catch(err => {
+            console.error(err); // ✅ Agora estamos usando o erro!
+            alert("Erro ao editar. Verifique se o Backend atualizou.");
+        });
     } else {
       // ➕ MODO CRIAÇÃO (POST)
       axios.post(`${API_URL}/transactions/`, payload)
@@ -120,7 +122,10 @@ export function Transactions() {
           setTransactions([...transactions, response.data]);
           setIsModalOpen(false);
         })
-        .catch(err => alert("Erro ao criar."));
+        .catch(err => {
+            console.error(err); // ✅ Agora estamos usando o erro!
+            alert("Erro ao criar.");
+        });
     }
   }
 
