@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy import Column, ForeignKey, Integer, String, Float, DateTime, extract
+from sqlalchemy.orm import Session, joinedload  # <--- ESSA LINHA É A SALVAÇÃO! 🚑
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
