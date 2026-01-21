@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import Column, ForeignKey, Integer, String, Float, DateTime, extract
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -99,11 +99,17 @@ def reset_database():
 def get_categories(db: Session = Depends(get_db)):
     return db.query(models.Category).all()
 
-# 3. Listar Transações (Agora traz a categoria junto)
+# 3. Listar Transações (Com Filtro de Mês e Ano Opcional)
 @app.get("/transactions/{user_id}", response_model=List[TransactionResponse])
-def read_transactions(user_id: int, db: Session = Depends(get_db)):
-    # 'joinedload' faz a mágica de trazer os dados da categoria junto na consulta
-    return db.query(models.Transaction).filter(models.Transaction.user_id == user_id).options(joinedload(models.Transaction.category)).all()
+def read_transactions(user_id: int, month: Optional[int] = None, year: Optional[int] = None, db: Session = Depends(get_db)):
+    query = db.query(models.Transaction).filter(models.Transaction.user_id == user_id)
+    
+    # Se o frontend mandou mês e ano, a gente filtra!
+    if month and year:
+        query = query.filter(extract('month', models.Transaction.date) == month)
+        query = query.filter(extract('year', models.Transaction.date) == year)
+    
+    return query.options(joinedload(models.Transaction.category)).all()
 
 # 4. Criar Transação (Com Categoria)
 @app.post("/transactions/")
