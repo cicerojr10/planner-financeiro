@@ -1,64 +1,53 @@
 from pydantic import BaseModel
-from datetime import datetime
 from typing import List, Optional
+from datetime import datetime
 
-# --- Schemas de Transação ---
-class TransactionBase(BaseModel):
-    description: str
-    amount: float
-    type: str
-    category_id: Optional[int] = None
-
-# Input: Usado para CRIAR (Com a correção da data opcional)
-class TransactionCreate(TransactionBase):
-    date: Optional[datetime] = None
-
-# Output: Usado para LER (Renomeado para 'Transaction' para bater com o main.py)
-class Transaction(TransactionBase):
-    id: int
-    date: datetime
-    user_id: int
-    
-    # Adicionamos estes dois para o Frontend mostrar ícones e nomes!
-    category_name: Optional[str] = None
-    category_icon: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
-
-# --- Schemas de Usuário (Mantidos caso precise no futuro) ---
-class UserBase(BaseModel):
-    email: str
-
-class UserCreate(UserBase):
-    password: str
-
-class UserResponse(UserBase):
-    id: int
-    is_active: bool
-    transactions: List[Transaction] = [] # Atualizado para usar a classe certa
-
-    class Config:
-        from_attributes = True
-
-# --- SCHEMAS DE AUTENTICAÇÃO (NOVO) ---
-
+# --- USUÁRIOS ---
 # O que o usuário manda para criar conta
 class UserCreate(BaseModel):
     email: str
     password: str
 
-# O que o sistema devolve quando cria o usuário
+# O que devolvemos para o mundo (NUNCA devolvemos a senha)
 class UserResponse(BaseModel):
     id: int
     email: str
-    
     class Config:
-        from_attributes = True
+        orm_mode = True
 
-# O Token que devolvemos no Login
+# --- TOKEN (O Crachá) ---
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+# --- CATEGORIAS ---
+class CategoryCreate(BaseModel):
+    name: str
+    icon: str
+    color: str
+
+class CategoryResponse(BaseModel):
     id: int
-    email: str
+    name: str
+    icon: str
+    color: str
+    class Config:
+        orm_mode = True
+
+# --- TRANSAÇÕES ---
+class TransactionCreate(BaseModel):
+    description: str
+    amount: float
+    type: str
+    category_id: Optional[int] = None 
+    # user_id não é mais necessário aqui, vamos pegar automático do token depois
+
+class TransactionResponse(BaseModel):
+    id: int
+    description: str
+    amount: float
+    type: str
+    date: datetime
+    category: Optional[CategoryResponse] = None
+    class Config:
+        orm_mode = True
