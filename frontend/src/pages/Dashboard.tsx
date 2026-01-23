@@ -28,14 +28,16 @@ export function Dashboard() {
   // 📅 ESTADO DA DATA (Começa hoje)
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Carrega os dados sempre que a data mudar
   useEffect(() => {
     setLoading(true);
-    const month = currentDate.getMonth() + 1; // Javascript conta Janeiro como 0
+    const month = currentDate.getMonth() + 1;
     const year = currentDate.getFullYear();
+    const token = localStorage.getItem('token'); // 1. Pega o Token
 
-    // Passamos o filtro na URL
-    axios.get(`${API_URL}/transactions/1?month=${month}&year=${year}`)
+    // 2. Manda o Token no Cabeçalho (Header)
+    axios.get(`${API_URL}/transactions/?month=${month}&year=${year}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(response => {
         setTransactions(response.data);
         processChartData(response.data);
@@ -44,8 +46,13 @@ export function Dashboard() {
       .catch(error => {
         console.error("Erro:", error);
         setLoading(false);
+        // Se o token for inválido (erro 401), desloga o usuário
+        if (error.response?.status === 401) {
+             localStorage.removeItem('token');
+             window.location.reload();
+        }
       });
-  }, [currentDate]); // Dependência: Roda de novo se a data mudar
+  }, [currentDate]);
 
   // Função para navegar entre meses
   function changeMonth(offset: number) {
