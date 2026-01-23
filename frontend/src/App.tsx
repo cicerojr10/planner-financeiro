@@ -1,29 +1,36 @@
 import { useState, useEffect } from 'react';
 import { Transactions } from './pages/Transactions';
 import { Dashboard } from './pages/Dashboard';
-import { Login } from './pages/Login'; // <--- Importamos o Login
+import { Login } from './pages/Login';
 import { LayoutDashboard, List, Menu, X, LogOut } from 'lucide-react';
 
 export default function App() {
-  // 🔐 ESTADO DE AUTENTICAÇÃO
-  // Tenta ler o token do navegador ao iniciar
-  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
-  
+  // Tenta pegar o token. Se não tiver, começa como falso.
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'transactions'>('transactions');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Função de Logout
+  // Efeito que roda UMA vez quando o site abre para checar o token
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
   function handleLogout() {
+    console.log("Clicou em Sair!"); // Para debug
     localStorage.removeItem('token'); // Apaga o crachá
-    setIsAuthenticated(false); // Expulsa o usuário para o Login
+    setIsAuthenticated(false); // Força a tela a mudar
+    window.location.reload(); // Recarrega a página para garantir limpeza total
   }
 
-  // Se NÃO estiver logado, mostra a tela de Login
+  // SE NÃO TIVER LOGADO, MOSTRA LOGIN
   if (!isAuthenticated) {
     return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
-  // --- DAQUI PARA BAIXO É O SISTEMA (SÓ QUEM TEM TOKEN VÊ) ---
+  // --- ÁREA DO SISTEMA ---
   
   function navigate(page: 'dashboard' | 'transactions') {
     setCurrentPage(page);
@@ -66,10 +73,11 @@ export default function App() {
           </button>
         </nav>
 
-        <div className="absolute bottom-6 left-0 right-0 px-4">
+        {/* BOTÃO SAIR (COM Z-INDEX ALTO PARA GARANTIR O CLIQUE) */}
+        <div className="absolute bottom-6 left-0 right-0 px-4 z-50">
           <button 
-            onClick={handleLogout} // <--- Agora o botão Sair funciona!
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+            onClick={handleLogout} 
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-red-400 transition-colors bg-slate-900 border border-slate-800 hover:border-red-500/50"
           >
             <LogOut size={20} />
             Sair
@@ -77,7 +85,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* CONTEÚDO PRINCIPAL */}
+      {/* CONTEÚDO */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="md:hidden h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4">
           <span className="font-bold text-lg">Meu Planner</span>
@@ -94,10 +102,7 @@ export default function App() {
       </main>
 
       {isMobileMenuOpen && (
-        <div 
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-        />
+        <div onClick={() => setIsMobileMenuOpen(false)} className="fixed inset-0 bg-black/50 z-40 md:hidden" />
       )}
     </div>
   );
