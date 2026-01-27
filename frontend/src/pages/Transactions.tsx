@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Trash2, Pencil, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
-  Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp 
+  Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
+  Coffee, GraduationCap, Zap, Smartphone, Plane, Heart // <--- NOVOS ÍCONES
 } from 'lucide-react';
 
-// ⚠️ SEU LINK
 const API_URL = 'https://meu-financeiro-8985.onrender.com';
 
 interface Category {
@@ -25,10 +25,13 @@ interface Transaction {
   category_id?: number;
 }
 
+// MAPA ATUALIZADO COM TODOS OS ÍCONES
 const iconMap: Record<string, any> = { 
   'utensils': Utensils, 'car': Car, 'gamepad-2': Gamepad2, 
   'activity': Activity, 'home': Home, 'banknote': Banknote, 
-  'shopping-bag': ShoppingBag, 'circle': CircleHelp 
+  'shopping-bag': ShoppingBag, 'circle': CircleHelp,
+  'coffee': Coffee, 'graduation-cap': GraduationCap, 
+  'zap': Zap, 'smartphone': Smartphone, 'plane': Plane, 'heart': Heart
 };
 
 export function Transactions() {
@@ -46,17 +49,19 @@ export function Transactions() {
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
 
-  // 🔄 CARREGA DADOS (COM TOKEN)
+  // 🔄 CARREGA DADOS
   useEffect(() => {
+    loadData();
+  }, []);
+
+  function loadData() {
     const token = localStorage.getItem('token');
-    
-    // Configuração do Header com o Token
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
-    // Carrega Categorias
+    // Busca Categorias (Atualizadas)
     axios.get(`${API_URL}/categories`, config).then(res => setCategories(res.data));
 
-    // Carrega Transações (Sem ID na URL, o backend descobre pelo token)
+    // Busca Transações
     axios.get(`${API_URL}/transactions/`, config)
       .then(res => {
         setTransactions(res.data);
@@ -65,15 +70,14 @@ export function Transactions() {
       .catch(err => {
         console.error(err);
         setLoading(false);
-        // Se o token venceu, desloga
         if (err.response?.status === 401) {
             localStorage.removeItem('token');
             window.location.reload();
         }
       });
-  }, []);
+  }
 
-  // 🗑️ DELETAR (COM TOKEN)
+  // 🗑️ DELETAR
   function handleDelete(id: number) {
     if (confirm('Tem certeza que deseja excluir?')) {
       const token = localStorage.getItem('token');
@@ -82,7 +86,7 @@ export function Transactions() {
       const backup = [...transactions];
       setTransactions(transactions.filter(t => t.id !== id));
 
-      axios.delete(`${API_URL}/transactions/${id}`, config) // <--- Header aqui!
+      axios.delete(`${API_URL}/transactions/${id}`, config)
         .catch(() => {
           alert("Erro ao deletar.");
           setTransactions(backup);
@@ -110,47 +114,47 @@ export function Transactions() {
     setNewAmount('');
     setNewType('expense');
     setSelectedCatId('');
+    
+    // Recarrega categorias ao abrir o modal para garantir que pegou as novas
+    const token = localStorage.getItem('token');
+    axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setCategories(res.data));
+
     setIsModalOpen(true);
   }
 
-  // 💾 SALVAR (COM TOKEN)
+  // 💾 SALVAR
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedCatId) return alert("Selecione uma categoria!");
 
     const token = localStorage.getItem('token');
-    const config = { headers: { Authorization: `Bearer ${token}` } }; // <--- O CRACHÁ
+    const config = { headers: { Authorization: `Bearer ${token}` } };
 
     const payload = {
       description: newDesc,
       amount: parseFloat(newAmount),
       type: newType,
       category_id: parseInt(selectedCatId)
-      // user_id: Não precisa mais, o backend pega do token
     };
 
     if (editingId) {
-      // EDITAR (PUT)
-      axios.put(`${API_URL}/transactions/${editingId}`, payload, config) // <--- config
+      axios.put(`${API_URL}/transactions/${editingId}`, payload, config)
         .then(response => {
-          setTransactions(transactions.map(t => t.id === editingId ? response.data : t));
+          // Atualiza a lista localmente
+          setTransactions(transactions.map(t => t.id === editingId ? { ...response.data, category: categories.find(c => c.id === parseInt(selectedCatId)) } : t));
           setIsModalOpen(false);
+          loadData(); // Recarrega para garantir
         })
-        .catch(err => {
-            console.error(err);
-            alert("Erro ao editar.");
-        });
+        .catch(err => alert("Erro ao editar."));
     } else {
-      // CRIAR (POST)
-      axios.post(`${API_URL}/transactions/`, payload, config) // <--- config
+      axios.post(`${API_URL}/transactions/`, payload, config)
         .then(response => {
-          setTransactions([...transactions, response.data]);
+          setTransactions([...transactions, { ...response.data, category: categories.find(c => c.id === parseInt(selectedCatId)) }]);
           setIsModalOpen(false);
+          loadData(); // Recarrega para garantir
         })
-        .catch(err => {
-            console.error(err);
-            alert("Erro ao criar.");
-        });
+        .catch(err => alert("Erro ao criar."));
     }
   }
 
@@ -258,13 +262,13 @@ export function Transactions() {
 
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Categoria</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                   {categories.map(cat => (
                     <button key={cat.id} type="button" onClick={() => setSelectedCatId(String(cat.id))}
                       className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${selectedCatId === String(cat.id) ? 'bg-slate-800 border-emerald-500 text-emerald-400 ring-1 ring-emerald-500' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-600'}`}
                     >
                       <span style={{ color: selectedCatId === String(cat.id) ? 'inherit' : cat.color }}>{renderIcon(cat.icon)}</span>
-                      <span className="text-[10px] mt-1 font-medium">{cat.name}</span>
+                      <span className="text-[10px] mt-1 font-medium truncate w-full text-center">{cat.name}</span>
                     </button>
                   ))}
                 </div>
