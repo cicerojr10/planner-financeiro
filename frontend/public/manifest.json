@@ -1,0 +1,21 @@
+{
+  "name": "Meu Planner Financeiro",
+  "short_name": "Finanças",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/money-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icons/money-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
