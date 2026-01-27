@@ -187,3 +187,47 @@ def reset_database():
     models.Base.metadata.drop_all(bind=database.engine)
     models.Base.metadata.create_all(bind=database.engine)
     return {"message": "Banco resetado"}
+
+# --- NOVAS ROTAS DE CATEGORIAS ---
+
+# 6. CRIAR CATEGORIA
+@app.post("/categories/", response_model=schemas.CategoryResponse)
+def create_category(
+    category: schemas.CategoryCreate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user) # Exige login
+):
+    # Verifica se já existe uma com esse nome
+    exists = db.query(models.Category).filter(models.Category.name == category.name).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="Categoria já existe")
+    
+    new_cat = models.Category(
+        name=category.name,
+        icon=category.icon,
+        color=category.color
+    )
+    db.add(new_cat)
+    db.commit()
+    db.refresh(new_cat)
+    return new_cat
+
+# 7. DELETAR CATEGORIA
+@app.delete("/categories/{category_id}")
+def delete_category(
+    category_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user) # Exige login
+):
+    # Proteção: Não deixa apagar se tiver transações usando ela
+    has_transactions = db.query(models.Transaction).filter(models.Transaction.category_id == category_id).first()
+    if has_transactions:
+        raise HTTPException(status_code=400, detail="Não é possível apagar: Existem transações usando esta categoria.")
+    
+    cat = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if cat:
+        db.delete(cat)
+        db.commit()
+        return {"message": "Categoria deletada com sucesso!"}
+    
+    raise HTTPException(status_code=404, detail="Categoria não encontrada")

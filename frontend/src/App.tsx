@@ -2,15 +2,15 @@ import { useState, useEffect } from 'react';
 import { Transactions } from './pages/Transactions';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
-import { LayoutDashboard, List, Menu, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, List, Menu, X, LogOut, Tags } from 'lucide-react';
+import { Categories } from './pages/Categories'; // Importou certo!
 
 export default function App() {
-  // Tenta pegar o token. Se não tiver, começa como falso.
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'transactions'>('transactions');
+  // Adicionou 'categories' no tipo. Perfeito.
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'transactions' | 'categories'>('transactions');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Efeito que roda UMA vez quando o site abre para checar o token
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -19,27 +19,24 @@ export default function App() {
   }, []);
 
   function handleLogout() {
-    console.log("Clicou em Sair!"); // Para debug
-    localStorage.removeItem('token'); // Apaga o crachá
-    setIsAuthenticated(false); // Força a tela a mudar
-    window.location.reload(); // Recarrega a página para garantir limpeza total
+    localStorage.removeItem('token');
+    setIsAuthenticated(false);
+    window.location.reload();
   }
 
-  // SE NÃO TIVER LOGADO, MOSTRA LOGIN
   if (!isAuthenticated) {
     return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
-  // --- ÁREA DO SISTEMA ---
-  
-  function navigate(page: 'dashboard' | 'transactions') {
+  // Função helper para fechar menu mobile ao navegar
+  function navigate(page: 'dashboard' | 'transactions' | 'categories') {
     setCurrentPage(page);
     setIsMobileMenuOpen(false);
   }
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans">
-      
+
       {/* SIDEBAR */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out
@@ -71,9 +68,16 @@ export default function App() {
             <List size={20} />
             Transações
           </button>
+
+          <button 
+            onClick={() => navigate('categories')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${currentPage === 'categories' ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}
+          >
+            <Tags size={20} />
+            Categorias
+          </button>
         </nav>
 
-        {/* BOTÃO SAIR (COM Z-INDEX ALTO PARA GARANTIR O CLIQUE) */}
         <div className="absolute bottom-6 left-0 right-0 px-4 z-50">
           <button 
             onClick={handleLogout} 
@@ -85,7 +89,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* CONTEÚDO */}
+      {/* CONTEÚDO PRINCIPAL */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="md:hidden h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4">
           <span className="font-bold text-lg">Meu Planner</span>
@@ -94,9 +98,12 @@ export default function App() {
           </button>
         </header>
 
+        {}
         <div className="flex-1 overflow-auto p-4 md:p-8">
           <div className="max-w-5xl mx-auto">
-            {currentPage === 'dashboard' ? <Dashboard /> : <Transactions />}
+            {currentPage === 'dashboard' && <Dashboard />}
+            {currentPage === 'transactions' && <Transactions />}
+            {currentPage === 'categories' && <Categories />}
           </div>
         </div>
       </main>
