@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-  Trash2, Plus, X, 
+  Trash2, Plus, 
   Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
   Coffee, GraduationCap, Zap, Smartphone, Plane, Heart
 } from 'lucide-react';
@@ -60,8 +60,9 @@ export function Categories() {
       setLoading(false);
     })
     .catch(err => {
-      alert("Erro ao criar (Talvez o nome já exista?)");
-      setLoading(false);
+    console.error(err); // <--- Adicione isso
+    alert("Erro ao criar (Talvez o nome já exista?)");
+    setLoading(false);
     });
   }
 

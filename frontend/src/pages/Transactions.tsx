@@ -154,7 +154,10 @@ export function Transactions() {
           setIsModalOpen(false);
           loadData(); // Recarrega para garantir
         })
-        .catch(err => alert("Erro ao criar."));
+        .catch(err => {
+    console.error(err); // <--- Adicione isso
+    alert("Erro ao criar.");
+    });
     }
   }
 
