@@ -141,23 +141,25 @@ export function Transactions() {
     if (editingId) {
       axios.put(`${API_URL}/transactions/${editingId}`, payload, config)
         .then(response => {
-          // Atualiza a lista localmente
           setTransactions(transactions.map(t => t.id === editingId ? { ...response.data, category: categories.find(c => c.id === parseInt(selectedCatId)) } : t));
           setIsModalOpen(false);
-          loadData(); // Recarrega para garantir
+          loadData();
         })
-        .catch(err => alert("Erro ao editar."));
+        .catch(err => {
+            console.error(err); // <--- AQUI: Agora estamos usando o 'err'
+            alert("Erro ao editar.");
+        });
     } else {
       axios.post(`${API_URL}/transactions/`, payload, config)
         .then(response => {
           setTransactions([...transactions, { ...response.data, category: categories.find(c => c.id === parseInt(selectedCatId)) }]);
           setIsModalOpen(false);
-          loadData(); // Recarrega para garantir
+          loadData();
         })
         .catch(err => {
-    console.error(err); // <--- Adicione isso
-    alert("Erro ao criar.");
-    });
+            console.error(err); // <--- AQUI TAMBÉM: Usando o 'err' da linha 149
+            alert("Erro ao criar.");
+        });
     }
   }
 
