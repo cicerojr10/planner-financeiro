@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-  Trash2, Plus, Pencil, X, // <--- Adicionamos Pencil e X
+  Trash2, Pencil, X, // <--- Adicionamos Pencil e X
   Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
   Coffee, GraduationCap, Zap, Smartphone, Plane, Heart
 } from 'lucide-react';
