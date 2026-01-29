@@ -231,3 +231,24 @@ def delete_category(
         return {"message": "Categoria deletada com sucesso!"}
     
     raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+# 8. ATUALIZAR CATEGORIA
+@app.put("/categories/{category_id}", response_model=schemas.CategoryResponse)
+def update_category(
+    category_id: int, 
+    category: schemas.CategoryCreate, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    db_cat = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not db_cat:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    # Atualiza os dados
+    db_cat.name = category.name
+    db_cat.icon = category.icon
+    db_cat.color = category.color
+    
+    db.commit()
+    db.refresh(db_cat)
+    return db_cat
