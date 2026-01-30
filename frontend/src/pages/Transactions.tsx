@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Trash2, Pencil, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
-  ChevronLeft, ChevronRight, // <--- Novos ícones para navegação
+  ChevronLeft, ChevronRight,
   Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
   Coffee, GraduationCap, Zap, Smartphone, Plane, Heart
 } from 'lucide-react';
@@ -22,6 +22,7 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   date: string;
+  is_fixed?: boolean; // 👈 NOVO CAMPO
   category?: Category;
   category_id?: number;
 }
@@ -46,10 +47,12 @@ export function Transactions() {
   // ESTADOS DO MODAL
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
+  const [isFixed, setIsFixed] = useState(false); // 👈 ESTADO DO CHECKBOX
 
   useEffect(() => {
     loadData();
@@ -76,7 +79,6 @@ export function Transactions() {
       });
   }
 
-  // 📅 FUNÇÕES DE NAVEGAÇÃO NO TEMPO
   function prevMonth() {
     const newDate = new Date(currentDate);
     newDate.setMonth(currentDate.getMonth() - 1);
@@ -96,7 +98,7 @@ export function Transactions() {
       const backup = [...transactions];
       setTransactions(transactions.filter(t => t.id !== id));
       axios.delete(`${API_URL}/transactions/${id}`, config)
-        .catch((err) => { // Corrigindo o erro do TS usando o 'err'
+        .catch((err) => {
           console.error(err);
           alert("Erro ao deletar.");
           setTransactions(backup);
@@ -111,6 +113,7 @@ export function Transactions() {
     setNewType(transaction.type);
     const catId = transaction.category?.id || transaction.category_id;
     setSelectedCatId(catId ? String(catId) : '');
+    setIsFixed(transaction.is_fixed || false); // 👈 CARREGA O VALOR
     setIsModalOpen(true);
   }
 
@@ -120,6 +123,7 @@ export function Transactions() {
     setNewAmount('');
     setNewType('expense');
     setSelectedCatId('');
+    setIsFixed(false); // 👈 RESETA O VALOR
     setIsModalOpen(true);
   }
 
@@ -130,14 +134,12 @@ export function Transactions() {
     const token = localStorage.getItem('token');
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
-    // Adiciona a data atual se for novo, ou mantém a antiga se for edição
-    // OBS: Futuramente podemos colocar um campo de data no formulário
     const payload = {
       description: newDesc,
       amount: parseFloat(newAmount),
       type: newType,
       category_id: parseInt(selectedCatId),
-      // Se for novo, usa a data do mês que estamos visualizando para não "sumir" da lista
+      is_fixed: isFixed, // 👈 ENVIA PRO BANCO
       date: editingId ? undefined : currentDate.toISOString() 
     };
 
@@ -165,35 +167,26 @@ export function Transactions() {
     return <IconComponent size={18} />;
   };
 
-  // 🕵️‍♂️ FILTRO PODEROSO: Texto + Mês/Ano
   const filteredTransactions = transactions.filter(t => {
     const transactionDate = new Date(t.date);
-    // Verifica se é do mesmo mês e ano da tela
     const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
     const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
-    // Verifica busca por texto
     const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
-    
     return isSameMonth && isSameYear && matchesSearch;
-  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Ordena por data (mais recente primeiro)
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Formata o título do mês (ex: "Janeiro de 2026")
   const monthTitle = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  // Deixa a primeira letra maiúscula
   const formattedTitle = monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1);
 
   return (
-    <div className="space-y-6 relative animate-fade-in">
+    <div className="space-y-6 relative animate-fade-in pb-20">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Transações</h1>
           <p className="text-slate-400">Gerencie suas entradas e saídas.</p>
         </div>
 
-        {/* 📅 BARRA DE CONTROLE: Busca + Mês + Botão Nova */}
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto items-center">
-          
-          {/* NAVEGAÇÃO DE MÊS */}
           <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-1">
             <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
               <ChevronLeft size={20} />
@@ -206,7 +199,6 @@ export function Transactions() {
             </button>
           </div>
 
-          {/* BUSCA */}
           <div className="relative flex-1 md:w-48 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
@@ -255,7 +247,11 @@ export function Transactions() {
                         </span>
                       ) : <span className="text-slate-600">-</span>}
                     </td>
-                    <td className="p-4 text-slate-200 font-medium">{t.description}</td>
+                    <td className="p-4 text-slate-200 font-medium flex items-center gap-2">
+                      {t.description}
+                      {/* 📌 ÍCONE DE FIXA NA LISTA */}
+                      {t.is_fixed && <span className="text-yellow-500" title="Despesa Fixa (Mensal)">📌</span>}
+                    </td>
                     <td className={`p-4 font-bold ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
                       {t.type === 'expense' ? '- ' : '+ '}R$ {t.amount.toFixed(2)}
                     </td>
@@ -275,7 +271,6 @@ export function Transactions() {
         </div>
       </div>
 
-      {/* MODAL (MANTEVE IGUAL) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl p-6 relative animate-scale-in">
@@ -287,10 +282,20 @@ export function Transactions() {
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Descrição</label>
-                <input autoFocus type="text" placeholder="Ex: Coxinha" required 
+                <input autoFocus type="text" placeholder="Ex: Aluguel" required 
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:border-emerald-500 outline-none"
                   value={newDesc} onChange={e => setNewDesc(e.target.value)}
                 />
+              </div>
+
+              {/* CHECKBOX DE DESPESA FIXA */}
+              <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800 cursor-pointer" onClick={() => setIsFixed(!isFixed)}>
+                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isFixed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
+                  {isFixed && <span className="text-slate-900 text-xs font-bold">✓</span>}
+                </div>
+                <label className="text-sm text-slate-300 cursor-pointer select-none">
+                  Esta é uma despesa fixa 📌
+                </label>
               </div>
 
               <div>
