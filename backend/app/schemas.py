@@ -51,3 +51,10 @@ class TransactionResponse(BaseModel):
     category: Optional[CategoryResponse] = None
     class Config:
         orm_mode = True
+
+class TransactionBase(BaseModel):
+    description: str
+    amount: float
+    type: str
+    category_id: int
+    is_fixed: bool = False  # 👈 ADICIONE AQUI (com valor padrão False)

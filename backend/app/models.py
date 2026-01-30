@@ -42,3 +42,11 @@ class Transaction(Base):
     # Conexão com Categoria
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     category = relationship("Category", back_populates="transactions")
+
+    is_fixed = Column(Boolean, default=False) 
+
+    category_id = Column(Integer, ForeignKey("categories.id"))
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    
+    category = relationship("Category", back_populates="transactions")
+    owner = relationship("User", back_populates="transactions")
