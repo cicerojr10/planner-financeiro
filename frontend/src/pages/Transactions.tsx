@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Trash2, Pencil, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
+  ChevronLeft, ChevronRight, // <--- Novos ícones para navegação
   Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
-  Coffee, GraduationCap, Zap, Smartphone, Plane, Heart // <--- NOVOS ÍCONES
+  Coffee, GraduationCap, Zap, Smartphone, Plane, Heart
 } from 'lucide-react';
 
 const API_URL = 'https://meu-financeiro-8985.onrender.com';
@@ -25,7 +26,6 @@ interface Transaction {
   category_id?: number;
 }
 
-// MAPA ATUALIZADO COM TODOS OS ÍCONES
 const iconMap: Record<string, any> = { 
   'utensils': Utensils, 'car': Car, 'gamepad-2': Gamepad2, 
   'activity': Activity, 'home': Home, 'banknote': Banknote, 
@@ -39,17 +39,18 @@ export function Transactions() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // 📅 ESTADO PARA CONTROLAR O MÊS ATUAL
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   // ESTADOS DO MODAL
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-
   const [newDesc, setNewDesc] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
 
-  // 🔄 CARREGA DADOS
   useEffect(() => {
     loadData();
   }, []);
@@ -58,10 +59,8 @@ export function Transactions() {
     const token = localStorage.getItem('token');
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
-    // Busca Categorias (Atualizadas)
     axios.get(`${API_URL}/categories`, config).then(res => setCategories(res.data));
 
-    // Busca Transações
     axios.get(`${API_URL}/transactions/`, config)
       .then(res => {
         setTransactions(res.data);
@@ -77,53 +76,53 @@ export function Transactions() {
       });
   }
 
-  // 🗑️ DELETAR
+  // 📅 FUNÇÕES DE NAVEGAÇÃO NO TEMPO
+  function prevMonth() {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(currentDate.getMonth() - 1);
+    setCurrentDate(newDate);
+  }
+
+  function nextMonth() {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(currentDate.getMonth() + 1);
+    setCurrentDate(newDate);
+  }
+
   function handleDelete(id: number) {
     if (confirm('Tem certeza que deseja excluir?')) {
       const token = localStorage.getItem('token');
       const config = { headers: { Authorization: `Bearer ${token}` } };
-
       const backup = [...transactions];
       setTransactions(transactions.filter(t => t.id !== id));
-
       axios.delete(`${API_URL}/transactions/${id}`, config)
-        .catch(() => {
+        .catch((err) => { // Corrigindo o erro do TS usando o 'err'
+          console.error(err);
           alert("Erro ao deletar.");
           setTransactions(backup);
         });
     }
   }
 
-  // ✏️ ABRIR MODAL EDIÇÃO
   function handleEdit(transaction: Transaction) {
     setEditingId(transaction.id);
     setNewDesc(transaction.description);
     setNewAmount(transaction.amount.toString());
     setNewType(transaction.type);
-    
     const catId = transaction.category?.id || transaction.category_id;
     setSelectedCatId(catId ? String(catId) : '');
-    
     setIsModalOpen(true);
   }
 
-  // ✨ ABRIR MODAL NOVO
   function handleNew() {
     setEditingId(null);
     setNewDesc('');
     setNewAmount('');
     setNewType('expense');
     setSelectedCatId('');
-    
-    // Recarrega categorias ao abrir o modal para garantir que pegou as novas
-    const token = localStorage.getItem('token');
-    axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setCategories(res.data));
-
     setIsModalOpen(true);
   }
 
-  // 💾 SALVAR
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedCatId) return alert("Selecione uma categoria!");
@@ -131,11 +130,15 @@ export function Transactions() {
     const token = localStorage.getItem('token');
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
+    // Adiciona a data atual se for novo, ou mantém a antiga se for edição
+    // OBS: Futuramente podemos colocar um campo de data no formulário
     const payload = {
       description: newDesc,
       amount: parseFloat(newAmount),
       type: newType,
-      category_id: parseInt(selectedCatId)
+      category_id: parseInt(selectedCatId),
+      // Se for novo, usa a data do mês que estamos visualizando para não "sumir" da lista
+      date: editingId ? undefined : currentDate.toISOString() 
     };
 
     if (editingId) {
@@ -145,10 +148,7 @@ export function Transactions() {
           setIsModalOpen(false);
           loadData();
         })
-        .catch(err => {
-            console.error(err); // <--- AQUI: Agora estamos usando o 'err'
-            alert("Erro ao editar.");
-        });
+        .catch(err => { console.error(err); alert("Erro ao editar."); });
     } else {
       axios.post(`${API_URL}/transactions/`, payload, config)
         .then(response => {
@@ -156,10 +156,7 @@ export function Transactions() {
           setIsModalOpen(false);
           loadData();
         })
-        .catch(err => {
-            console.error(err); // <--- AQUI TAMBÉM: Usando o 'err' da linha 149
-            alert("Erro ao criar.");
-        });
+        .catch(err => { console.error(err); alert("Erro ao criar."); });
     }
   }
 
@@ -168,20 +165,49 @@ export function Transactions() {
     return <IconComponent size={18} />;
   };
 
-  const filteredTransactions = transactions.filter(t => 
-    t.description.toLowerCase().includes(searchTerm.toLowerCase())
-  ).slice().reverse();
+  // 🕵️‍♂️ FILTRO PODEROSO: Texto + Mês/Ano
+  const filteredTransactions = transactions.filter(t => {
+    const transactionDate = new Date(t.date);
+    // Verifica se é do mesmo mês e ano da tela
+    const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
+    const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
+    // Verifica busca por texto
+    const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return isSameMonth && isSameYear && matchesSearch;
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Ordena por data (mais recente primeiro)
+
+  // Formata o título do mês (ex: "Janeiro de 2026")
+  const monthTitle = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  // Deixa a primeira letra maiúscula
+  const formattedTitle = monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1);
 
   return (
     <div className="space-y-6 relative animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Transações</h1>
-          <p className="text-slate-400">Gerencie suas finanças.</p>
+          <p className="text-slate-400">Gerencie suas entradas e saídas.</p>
         </div>
 
-        <div className="flex gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
+        {/* 📅 BARRA DE CONTROLE: Busca + Mês + Botão Nova */}
+        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto items-center">
+          
+          {/* NAVEGAÇÃO DE MÊS */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-1">
+            <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
+              <ChevronLeft size={20} />
+            </button>
+            <span className="px-4 font-medium text-slate-200 min-w-[140px] text-center">
+              {formattedTitle}
+            </span>
+            <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
+              <ChevronRight size={20} />
+            </button>
+          </div>
+
+          {/* BUSCA */}
+          <div className="relative flex-1 md:w-48 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="text" placeholder="Buscar..." 
@@ -189,12 +215,13 @@ export function Transactions() {
               value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+
           <button 
             onClick={handleNew}
-            className="bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            className="bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors w-full md:w-auto justify-center"
           >
             <Plus size={20} />
-            <span className="hidden md:inline">Nova</span>
+            <span className="">Nova</span>
           </button>
         </div>
       </div>
@@ -215,10 +242,10 @@ export function Transactions() {
               {loading ? (
                 <tr><td colSpan={5} className="p-8 text-center text-slate-500">Carregando...</td></tr>
               ) : filteredTransactions.length === 0 ? (
-                <tr><td colSpan={5} className="p-8 text-center text-slate-500">Nenhuma transação encontrada.</td></tr>
+                <tr><td colSpan={5} className="p-8 text-center text-slate-500">Nenhuma transação neste mês.</td></tr>
               ) : (
                 filteredTransactions.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-800/30 group">
+                  <tr key={t.id} className="hover:bg-slate-800/30 group transition-colors">
                     <td className="p-4 text-slate-400 text-sm">{new Date(t.date).toLocaleDateString()}</td>
                     <td className="p-4">
                       {t.category ? (
@@ -248,6 +275,7 @@ export function Transactions() {
         </div>
       </div>
 
+      {/* MODAL (MANTEVE IGUAL) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl p-6 relative animate-scale-in">
