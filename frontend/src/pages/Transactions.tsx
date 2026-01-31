@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Trash2, Pencil, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Copy, // 👈 Ícone novo
   Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
   Coffee, GraduationCap, Zap, Smartphone, Plane, Heart
 } from 'lucide-react';
@@ -22,7 +22,7 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   date: string;
-  is_fixed?: boolean; // 👈 NOVO CAMPO
+  is_fixed?: boolean;
   category?: Category;
   category_id?: number;
 }
@@ -41,10 +41,8 @@ export function Transactions() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // 📅 ESTADO PARA CONTROLAR O MÊS ATUAL
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // ESTADOS DO MODAL
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
@@ -52,7 +50,7 @@ export function Transactions() {
   const [newAmount, setNewAmount] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense'>('expense');
   const [selectedCatId, setSelectedCatId] = useState<string>('');
-  const [isFixed, setIsFixed] = useState(false); // 👈 ESTADO DO CHECKBOX
+  const [isFixed, setIsFixed] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -91,6 +89,32 @@ export function Transactions() {
     setCurrentDate(newDate);
   }
 
+  // 🪄 FUNÇÃO MÁGICA DE CLONAR
+  async function handleClone() {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1; // JS conta meses do 0
+    const prevDate = new Date(currentDate);
+    prevDate.setMonth(prevDate.getMonth() - 1);
+    const prevMonthName = prevDate.toLocaleDateString('pt-BR', { month: 'long' });
+
+    if (!confirm(`Deseja copiar as despesas fixas de ${prevMonthName} para este mês?`)) return;
+
+    const token = localStorage.getItem('token');
+    try {
+      setLoading(true);
+      const res = await axios.post(`${API_URL}/transactions/clone`, null, {
+        params: { target_year: year, target_month: month },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert(res.data.message);
+      loadData(); // Recarrega para mostrar as novas transações
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao clonar despesas.');
+      setLoading(false);
+    }
+  }
+
   function handleDelete(id: number) {
     if (confirm('Tem certeza que deseja excluir?')) {
       const token = localStorage.getItem('token');
@@ -113,7 +137,7 @@ export function Transactions() {
     setNewType(transaction.type);
     const catId = transaction.category?.id || transaction.category_id;
     setSelectedCatId(catId ? String(catId) : '');
-    setIsFixed(transaction.is_fixed || false); // 👈 CARREGA O VALOR
+    setIsFixed(transaction.is_fixed || false);
     setIsModalOpen(true);
   }
 
@@ -123,7 +147,7 @@ export function Transactions() {
     setNewAmount('');
     setNewType('expense');
     setSelectedCatId('');
-    setIsFixed(false); // 👈 RESETA O VALOR
+    setIsFixed(false);
     setIsModalOpen(true);
   }
 
@@ -139,7 +163,7 @@ export function Transactions() {
       amount: parseFloat(newAmount),
       type: newType,
       category_id: parseInt(selectedCatId),
-      is_fixed: isFixed, // 👈 ENVIA PRO BANCO
+      is_fixed: isFixed,
       date: editingId ? undefined : currentDate.toISOString() 
     };
 
@@ -208,6 +232,15 @@ export function Transactions() {
             />
           </div>
 
+          {/* BOTÃO DE CLONAR */}
+          <button 
+            onClick={handleClone}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg flex items-center justify-center transition-colors"
+            title="Copiar fixas do mês anterior"
+          >
+            <Copy size={20} />
+          </button>
+
           <button 
             onClick={handleNew}
             className="bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors w-full md:w-auto justify-center"
@@ -249,7 +282,6 @@ export function Transactions() {
                     </td>
                     <td className="p-4 text-slate-200 font-medium flex items-center gap-2">
                       {t.description}
-                      {/* 📌 ÍCONE DE FIXA NA LISTA */}
                       {t.is_fixed && <span className="text-yellow-500" title="Despesa Fixa (Mensal)">📌</span>}
                     </td>
                     <td className={`p-4 font-bold ${t.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -288,7 +320,6 @@ export function Transactions() {
                 />
               </div>
 
-              {/* CHECKBOX DE DESPESA FIXA */}
               <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800 cursor-pointer" onClick={() => setIsFixed(!isFixed)}>
                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isFixed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
                   {isFixed && <span className="text-slate-900 text-xs font-bold">✓</span>}

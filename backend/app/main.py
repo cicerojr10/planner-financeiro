@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import extract # 👈 Importante para filtrar por mês
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from typing import List
@@ -10,17 +11,16 @@ models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
 
-# Configuração de CORS (Permitir acesso do Frontend)
+# Configuração de CORS
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, troque "*" pelo domínio do seu site
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Dependência para pegar o Banco de Dados
 def get_db():
     db = database.SessionLocal()
     try:
@@ -28,7 +28,6 @@ def get_db():
     finally:
         db.close()
 
-# Dependência de Usuário Atual
 def get_current_user(token: str = Depends(auth.oauth2_scheme), db: Session = Depends(get_db)):
     user = auth.get_current_user(token, db)
     if not user:
@@ -64,17 +63,64 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 # --- ROTAS DE TRANSAÇÕES ---
 
+# 👇 ROTA NOVA: CLONAR MÊS ANTERIOR
+@app.post("/transactions/clone")
+def clone_fixed_transactions(
+    target_year: int,
+    target_month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 1. Calcular qual é o mês anterior
+    if target_month == 1:
+        prev_month = 12
+        prev_year = target_year - 1
+    else:
+        prev_month = target_month - 1
+        prev_year = target_year
+
+    # 2. Buscar transações FIXAS do mês anterior deste usuário
+    old_txs = db.query(models.Transaction).filter(
+        models.Transaction.owner_id == current_user.id,
+        models.Transaction.is_fixed == True,
+        extract('month', models.Transaction.date) == prev_month,
+        extract('year', models.Transaction.date) == prev_year
+    ).all()
+
+    if not old_txs:
+        return {"message": "Nenhuma despesa fixa encontrada no mês anterior."}
+
+    count = 0
+    for tx in old_txs:
+        # 3. Criar a nova data
+        # Tenta manter o mesmo dia. Se der erro (ex: 30 de Fev), joga pro dia 1.
+        try:
+            new_date = tx.date.replace(year=target_year, month=target_month)
+        except ValueError:
+            new_date = tx.date.replace(year=target_year, month=target_month, day=1)
+
+        new_tx = models.Transaction(
+            description=tx.description,
+            amount=tx.amount,
+            type=tx.type,
+            date=new_date,
+            is_fixed=True, # A cópia continua sendo fixa
+            category_id=tx.category_id,
+            owner_id=current_user.id
+        )
+        db.add(new_tx)
+        count += 1
+
+    db.commit()
+    return {"message": f"{count} transações clonadas!"}
+
 @app.post("/transactions/", response_model=schemas.TransactionResponse)
 def create_transaction(
     transaction: schemas.TransactionCreate, 
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Verifica se a categoria pertence ao usuário
     category = db.query(models.Category).filter(models.Category.id == transaction.category_id).first()
-    if not category: # Permite criar sem categoria se quiser, ou trave aqui
-        pass 
-        
     db_transaction = models.Transaction(**transaction.dict(), owner_id=current_user.id)
     db.add(db_transaction)
     db.commit()
@@ -88,7 +134,6 @@ def read_transactions(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # AQUI ESTAVA O ERRO: mudamos user_id para owner_id
     transactions = db.query(models.Transaction)\
                      .filter(models.Transaction.owner_id == current_user.id)\
                      .order_by(models.Transaction.date.desc())\
@@ -139,7 +184,6 @@ def delete_transaction(
 
 @app.get("/categories", response_model=List[schemas.CategoryResponse])
 def get_categories(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    # Agora filtra categorias apenas do usuário dono
     return db.query(models.Category).filter(models.Category.owner_id == current_user.id).all()
 
 @app.post("/categories/", response_model=schemas.CategoryResponse)
@@ -156,7 +200,6 @@ def create_category(
     if exists:
         raise HTTPException(status_code=400, detail="Categoria já existe")
         
-    # Aqui associa a categoria ao usuário logado (owner_id)
     new_category = models.Category(
         name=category.name,
         icon=category.icon,
@@ -174,7 +217,6 @@ def delete_category(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Verifica se a categoria pertence ao usuário antes de deletar
     db_cat = db.query(models.Category).filter(
         models.Category.id == category_id,
         models.Category.owner_id == current_user.id
@@ -182,8 +224,7 @@ def delete_category(
     
     if not db_cat:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
-        
-    # Verifica se tem transações (opcional, mas seguro)
+    
     if db_cat.transactions:
         raise HTTPException(status_code=400, detail="Não é possível apagar categoria com transações.")
 
