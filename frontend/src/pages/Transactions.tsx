@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Trash2, Pencil, Search, ArrowUpCircle, ArrowDownCircle, Plus, X, 
-  ChevronLeft, ChevronRight, Copy, // 👈 Ícone novo
+  ChevronLeft, ChevronRight, Copy,
   Utensils, Car, Gamepad2, Activity, Home, Banknote, ShoppingBag, CircleHelp,
   Coffee, GraduationCap, Zap, Smartphone, Plane, Heart
 } from 'lucide-react';
@@ -41,7 +41,11 @@ export function Transactions() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
-  const [currentDate, setCurrentDate] = useState(new Date());
+  // 📅 CORREÇÃO 1: Começa sempre no dia 1 para evitar bugs de fuso/mês curto
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -52,11 +56,13 @@ export function Transactions() {
   const [selectedCatId, setSelectedCatId] = useState<string>('');
   const [isFixed, setIsFixed] = useState(false);
 
+  // Recarrega os dados sempre que o Mês mudar (currentDate)
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentDate]); 
 
   function loadData() {
+    setLoading(true); // Mostra carregando ao trocar de mês
     const token = localStorage.getItem('token');
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
@@ -77,27 +83,32 @@ export function Transactions() {
       });
   }
 
+  // 📅 CORREÇÃO 2: Navegação segura (Força dia 1)
   function prevMonth() {
     const newDate = new Date(currentDate);
-    newDate.setMonth(currentDate.getMonth() - 1);
+    newDate.setDate(1); // Garante que não pule Fevereiro
+    newDate.setMonth(newDate.getMonth() - 1);
     setCurrentDate(newDate);
   }
 
   function nextMonth() {
     const newDate = new Date(currentDate);
-    newDate.setMonth(currentDate.getMonth() + 1);
+    newDate.setDate(1); // Garante que não pule Fevereiro
+    newDate.setMonth(newDate.getMonth() + 1);
     setCurrentDate(newDate);
   }
 
-  // 🪄 FUNÇÃO MÁGICA DE CLONAR
   async function handleClone() {
     const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1; // JS conta meses do 0
+    const month = currentDate.getMonth() + 1; 
+    
+    // Calcula nome do mês anterior para o alerta
     const prevDate = new Date(currentDate);
     prevDate.setMonth(prevDate.getMonth() - 1);
     const prevMonthName = prevDate.toLocaleDateString('pt-BR', { month: 'long' });
+    const currentMonthName = currentDate.toLocaleDateString('pt-BR', { month: 'long' });
 
-    if (!confirm(`Deseja copiar as despesas fixas de ${prevMonthName} para este mês?`)) return;
+    if (!confirm(`Deseja copiar as despesas fixas de ${prevMonthName} para ${currentMonthName}?`)) return;
 
     const token = localStorage.getItem('token');
     try {
@@ -107,7 +118,7 @@ export function Transactions() {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert(res.data.message);
-      loadData(); // Recarrega para mostrar as novas transações
+      loadData(); 
     } catch (error) {
       console.error(error);
       alert('Erro ao clonar despesas.');
@@ -164,7 +175,8 @@ export function Transactions() {
       type: newType,
       category_id: parseInt(selectedCatId),
       is_fixed: isFixed,
-      date: editingId ? undefined : currentDate.toISOString() 
+      // Se for novo, usa a data atual do MÊS SELECIONADO (dia 1 ou hoje se for mesmo mês)
+      date: editingId ? undefined : new Date().getMonth() === currentDate.getMonth() ? new Date().toISOString() : currentDate.toISOString()
     };
 
     if (editingId) {
@@ -193,6 +205,8 @@ export function Transactions() {
 
   const filteredTransactions = transactions.filter(t => {
     const transactionDate = new Date(t.date);
+    // Usa UTC methods ou ajusta fuso para garantir comparação correta
+    // Simplificação: compara apenas Mês e Ano locais
     const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
     const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
     const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -232,7 +246,6 @@ export function Transactions() {
             />
           </div>
 
-          {/* BOTÃO DE CLONAR */}
           <button 
             onClick={handleClone}
             className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg flex items-center justify-center transition-colors"
