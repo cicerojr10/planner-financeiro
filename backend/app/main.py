@@ -79,7 +79,7 @@ def clone_fixed_transactions(
         prev_month = target_month - 1
         prev_year = target_year
 
-    # 2. Buscar transações FIXAS do mês anterior deste usuário
+    # 2. Buscar transações FIXAS do mês anterior
     old_txs = db.query(models.Transaction).filter(
         models.Transaction.owner_id == current_user.id,
         models.Transaction.is_fixed == True,
@@ -93,18 +93,19 @@ def clone_fixed_transactions(
     count = 0
     for tx in old_txs:
         # 3. Criar a nova data
-        # Tenta manter o mesmo dia. Se der erro (ex: 30 de Fev), joga pro dia 1.
+        # TRUQUE: Forçamos hour=12 (meio-dia) para evitar que o fuso horário jogue pro dia anterior
         try:
-            new_date = tx.date.replace(year=target_year, month=target_month)
+            new_date = tx.date.replace(year=target_year, month=target_month, hour=12, minute=0, second=0)
         except ValueError:
-            new_date = tx.date.replace(year=target_year, month=target_month, day=1)
+            # Se cair num dia inválido (ex: 30 de fev), joga pro dia 1º ao meio-dia
+            new_date = tx.date.replace(year=target_year, month=target_month, day=1, hour=12, minute=0, second=0)
 
         new_tx = models.Transaction(
             description=tx.description,
             amount=tx.amount,
             type=tx.type,
             date=new_date,
-            is_fixed=True, # A cópia continua sendo fixa
+            is_fixed=True, 
             category_id=tx.category_id,
             owner_id=current_user.id
         )
