@@ -156,8 +156,11 @@ def update_transaction(
     if not db_transaction:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
     
+    # 👇 A MÁGICA É AQUI: O "if value is not None"
+    # Isso impede que o sistema apague a data original se o frontend mandar vazio
     for key, value in transaction.dict().items():
-        setattr(db_transaction, key, value)
+        if value is not None: 
+            setattr(db_transaction, key, value)
     
     db.commit()
     db.refresh(db_transaction)
