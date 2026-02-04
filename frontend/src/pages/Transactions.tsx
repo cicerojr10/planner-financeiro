@@ -204,13 +204,14 @@ export function Transactions() {
   };
 
   const filteredTransactions = transactions.filter(t => {
-    const transactionDate = new Date(t.date);
-    // Usa UTC methods ou ajusta fuso para garantir comparação correta
-    // Simplificação: compara apenas Mês e Ano locais
-    const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
-    const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
+    // 👇 COMENTEI O FILTRO DE DATA TEMPORARIAMENTE
+    // const transactionDate = new Date(t.date);
+    // const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
+    // const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
     const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
-    return isSameMonth && isSameYear && matchesSearch;
+    
+    // 👇 AGORA SÓ FILTRA PELA BUSCA, MOSTRA TUDO DE TODOS OS MESES
+    return matchesSearch; 
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const monthTitle = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
