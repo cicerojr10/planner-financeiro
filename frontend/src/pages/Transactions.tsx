@@ -204,14 +204,11 @@ export function Transactions() {
   };
 
   const filteredTransactions = transactions.filter(t => {
-    // 👇 COMENTEI O FILTRO DE DATA TEMPORARIAMENTE
-    // const transactionDate = new Date(t.date);
-    // const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
-    // const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
+    const transactionDate = new Date(t.date);
+    const isSameMonth = transactionDate.getMonth() === currentDate.getMonth();
+    const isSameYear = transactionDate.getFullYear() === currentDate.getFullYear();
     const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // 👇 AGORA SÓ FILTRA PELA BUSCA, MOSTRA TUDO DE TODOS OS MESES
-    return matchesSearch; 
+    return isSameMonth && isSameYear && matchesSearch;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const monthTitle = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
