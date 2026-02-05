@@ -98,7 +98,9 @@ def clone_fixed_transactions(
             new_date = tx.date.replace(year=target_year, month=target_month, hour=12, minute=0, second=0)
         except ValueError:
             # Se cair num dia inválido (ex: 30 de fev), joga pro dia 1º ao meio-dia
-            new_date = tx.date.replace(year=target_year, month=target_month, day=1, hour=12, minute=0, second=0)
+            new_date = tx.date.replace(year=target_year, month=target_month, day=2, hour=12, minute=0, second=0)
+
+            print(f"--- CLONANDO: {tx.description} | PARA A DATA: {new_date} ---")
 
         new_tx = models.Transaction(
             description=tx.description,
